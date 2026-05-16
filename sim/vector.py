@@ -35,3 +35,31 @@ def action_to_binary_vector(action: Iterable[int], num_users: int) -> list[int]:
         if 0 <= user_id < num_users:
             vector[user_id] = 1
     return vector
+
+
+def binary_vector_to_action(action: Iterable[int | bool], num_users: int) -> list[int]:
+    selected: list[int] = []
+    for index, flag in enumerate(action):
+        if index >= num_users:
+            break
+        if int(flag) != 0:
+            selected.append(index)
+    return selected
+
+
+def score_vector_to_action(
+    scores: Iterable[float],
+    num_users: int,
+    max_offloads: int,
+    *,
+    min_score: float = 0.0,
+) -> list[int]:
+    ranked: list[tuple[int, float]] = []
+    for index, score in enumerate(scores):
+        if index >= num_users:
+            break
+        score_value = float(score)
+        if score_value > min_score:
+            ranked.append((index, score_value))
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return [index for index, _ in ranked[:max_offloads]]

@@ -16,6 +16,13 @@ from sim import (
 PolicyFn = Callable[[dict], list[int]]
 
 
+def build_random_policy(env: MECEnv) -> PolicyFn:
+    def _policy(obs: dict) -> list[int]:
+        return random_policy(obs, env.rng)
+
+    return _policy
+
+
 def run_episode(env: MECEnv, policy_name: str, policy: PolicyFn, seed: int) -> dict:
     obs, _ = env.reset(seed=seed)
     total_reward = 0.0
@@ -26,10 +33,7 @@ def run_episode(env: MECEnv, policy_name: str, policy: PolicyFn, seed: int) -> d
     steps = 0
 
     while True:
-        if policy_name == "random":
-            action = random_policy(obs, env.rng)
-        else:
-            action = policy(obs)
+        action = policy(obs)
 
         obs, reward, done, info = env.step(action)
         total_reward += reward
@@ -81,13 +85,6 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7, help="Base random seed.")
     args = parser.parse_args()
 
-    policies: dict[str, PolicyFn] = {
-        "random": local_only_policy,
-        "local_only": local_only_policy,
-        "best_uplink": best_uplink_rate_policy,
-        "largest_queue": largest_queue_policy,
-    }
-
     print(f"episodes={args.episodes} seed={args.seed}")
     print(
         f"{'policy':<18}"
@@ -99,8 +96,16 @@ def main() -> None:
     )
     print("-" * 90)
 
-    for index, (name, policy) in enumerate(policies.items()):
+    policy_builders = [
+        ("random", lambda env: build_random_policy(env)),
+        ("local_only", lambda env: local_only_policy),
+        ("best_uplink", lambda env: best_uplink_rate_policy),
+        ("largest_queue", lambda env: largest_queue_policy),
+    ]
+
+    for index, (name, policy_builder) in enumerate(policy_builders):
         env = MECEnv(MECConfig(random_seed=args.seed + index))
+        policy = policy_builder(env)
         episode_results = [
             run_episode(env, name, policy, seed=args.seed + index * 1000 + episode)
             for episode in range(args.episodes)

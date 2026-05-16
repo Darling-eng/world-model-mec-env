@@ -8,7 +8,13 @@ from .policies import (
     random_policy,
 )
 from .rollout import Transition, collect_episode
-from .vector import action_to_binary_vector, flatten_observation, observation_vector_length
+from .vector import (
+    action_to_binary_vector,
+    binary_vector_to_action,
+    flatten_observation,
+    observation_vector_length,
+    score_vector_to_action,
+)
 
 __all__ = [
     "MECConfig",
@@ -16,6 +22,7 @@ __all__ = [
     "GymnasiumMECEnv",
     "Transition",
     "action_to_binary_vector",
+    "binary_vector_to_action",
     "best_uplink_rate_policy",
     "collect_episode",
     "flatten_observation",
@@ -23,4 +30,5 @@ __all__ = [
     "local_only_policy",
     "observation_vector_length",
     "random_policy",
+    "score_vector_to_action",
 ]
