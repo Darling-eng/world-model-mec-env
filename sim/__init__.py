@@ -1,6 +1,7 @@
 from .config import MECConfig
+from .dreamer_wrapper import DreamerMECEnv
 from .env import MECEnv
-from .gym_registration import register_gym_envs
+from .gym_registration import register_dreamer_envs, register_gym_envs
 from .gym_wrapper import GymnasiumMECEnv
 from .policies import (
     best_uplink_rate_policy,
@@ -19,8 +20,10 @@ from .vector import (
 
 __all__ = [
     "MECConfig",
+    "DreamerMECEnv",
     "MECEnv",
     "GymnasiumMECEnv",
+    "register_dreamer_envs",
     "register_gym_envs",
     "Transition",
     "action_to_binary_vector",
