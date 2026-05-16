@@ -1,0 +1,14 @@
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Local notes/editor state
+docs/.obsidian/
+
+# Python envs
+.venv/
+venv/
+env/
