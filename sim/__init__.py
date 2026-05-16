@@ -1,5 +1,5 @@
 from .config import MECConfig
-from .dreamer_wrapper import DreamerMECEnv
+from .dreamer_wrapper import DreamerMECEnv, LegacyDreamerMECEnv
 from .env import MECEnv
 from .gym_registration import register_dreamer_envs, register_gym_envs
 from .gym_wrapper import GymnasiumMECEnv
@@ -21,6 +21,7 @@ from .vector import (
 __all__ = [
     "MECConfig",
     "DreamerMECEnv",
+    "LegacyDreamerMECEnv",
     "MECEnv",
     "GymnasiumMECEnv",
     "register_dreamer_envs",
