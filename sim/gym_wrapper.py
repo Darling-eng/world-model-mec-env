@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - optional dependency
     np = None
 
 
-class GymnasiumMECEnv:
+class GymnasiumMECEnv(gym.Env if gym is not None else object):
     """
     Optional Gymnasium-compatible wrapper.
 
@@ -33,8 +33,10 @@ class GymnasiumMECEnv:
         if gym is None or np is None:
             raise ImportError("GymnasiumMECEnv requires gymnasium and numpy to be installed.")
 
+        super().__init__()
         self.env = env or MECEnv()
         self.action_mode = action_mode
+        self.metadata = {"render_modes": []}
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
