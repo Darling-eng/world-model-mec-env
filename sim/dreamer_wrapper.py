@@ -13,6 +13,24 @@ except ImportError:  # pragma: no cover - optional dependency
     legacy_gym = None
 
 
+def _to_legacy_space(space):
+    if legacy_gym is None:
+        raise ImportError("_to_legacy_space requires gym to be installed.")
+    if gym is not None:
+        if isinstance(space, gym.spaces.Box):
+            return legacy_gym.spaces.Box(
+                low=space.low,
+                high=space.high,
+                shape=space.shape,
+                dtype=space.dtype,
+            )
+        if isinstance(space, gym.spaces.MultiBinary):
+            return legacy_gym.spaces.MultiBinary(space.n)
+        if isinstance(space, gym.spaces.Discrete):
+            return legacy_gym.spaces.Discrete(space.n)
+    return space
+
+
 class DreamerMECEnv(gym.Env if gym is not None else object):
     """
     Compatibility wrapper for DreamerV3's legacy Gym adapter.
@@ -59,8 +77,8 @@ class LegacyDreamerMECEnv(legacy_gym.Env if legacy_gym is not None else object):
             raise ImportError("LegacyDreamerMECEnv requires gym to be installed.")
         super().__init__()
         self.env = GymnasiumMECEnv(action_mode=action_mode)
-        self.observation_space = self.env.observation_space
-        self.action_space = self.env.action_space
+        self.observation_space = _to_legacy_space(self.env.observation_space)
+        self.action_space = _to_legacy_space(self.env.action_space)
 
     def reset(self):
         obs, _ = self.env.reset()
