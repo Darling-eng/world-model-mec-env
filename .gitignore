@@ -12,3 +12,6 @@ docs/.obsidian/
 .venv/
 venv/
 env/
+
+# Experiment outputs
+outputs/
