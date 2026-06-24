@@ -165,12 +165,15 @@ def collect_rollout(env: GymnasiumMECEnv, agent: LinearPPOAgent, config: PPOConf
     episode_returns = []
     episode_completed = []
     episode_dropped = []
+    episode_deadline_violations = []
+    episode_deadline_rates = []
     episode_delays = []
     episode_queues = []
 
     current_return = 0.0
     current_completed = 0
     current_dropped = 0
+    current_deadline_violations = 0
     current_delay = 0.0
     current_queue = 0.0
     current_steps = 0
@@ -191,6 +194,7 @@ def collect_rollout(env: GymnasiumMECEnv, agent: LinearPPOAgent, config: PPOConf
         current_return += float(reward)
         current_completed += int(info["completed_tasks"])
         current_dropped += int(info["dropped_tasks"])
+        current_deadline_violations += int(info.get("deadline_violations", info["dropped_tasks"]))
         current_delay += float(info["avg_delay"])
         current_queue += float(info["total_queue"])
         current_steps += 1
@@ -200,6 +204,10 @@ def collect_rollout(env: GymnasiumMECEnv, agent: LinearPPOAgent, config: PPOConf
             episode_returns.append(current_return)
             episode_completed.append(current_completed)
             episode_dropped.append(current_dropped)
+            episode_deadline_violations.append(current_deadline_violations)
+            episode_deadline_rates.append(
+                current_deadline_violations / max(current_completed + current_deadline_violations, 1)
+            )
             episode_delays.append(current_delay / max(current_steps, 1))
             episode_queues.append(current_queue / max(current_steps, 1))
 
@@ -208,6 +216,7 @@ def collect_rollout(env: GymnasiumMECEnv, agent: LinearPPOAgent, config: PPOConf
             current_return = 0.0
             current_completed = 0
             current_dropped = 0
+            current_deadline_violations = 0
             current_delay = 0.0
             current_queue = 0.0
             current_steps = 0
@@ -225,6 +234,12 @@ def collect_rollout(env: GymnasiumMECEnv, agent: LinearPPOAgent, config: PPOConf
         "rollout_reward": float(np.mean(episode_returns)) if episode_returns else current_return,
         "completed_tasks": float(np.mean(episode_completed)) if episode_completed else float(current_completed),
         "dropped_tasks": float(np.mean(episode_dropped)) if episode_dropped else float(current_dropped),
+        "deadline_violations": float(np.mean(episode_deadline_violations))
+        if episode_deadline_violations
+        else float(current_deadline_violations),
+        "deadline_violation_rate": float(np.mean(episode_deadline_rates))
+        if episode_deadline_rates
+        else current_deadline_violations / max(current_completed + current_deadline_violations, 1),
         "avg_delay": float(np.mean(episode_delays)) if episode_delays else current_delay / max(current_steps, 1),
         "avg_total_queue": float(np.mean(episode_queues)) if episode_queues else current_queue / max(current_steps, 1),
     }
@@ -266,6 +281,7 @@ def evaluate(agent: LinearPPOAgent, episodes: int, seed: int) -> dict[str, float
         total_reward = 0.0
         completed = 0
         dropped = 0
+        deadline_violations = 0
         total_delay = 0.0
         total_queue = 0.0
         steps = 0
@@ -275,6 +291,7 @@ def evaluate(agent: LinearPPOAgent, episodes: int, seed: int) -> dict[str, float
             total_reward += float(reward)
             completed += int(info["completed_tasks"])
             dropped += int(info["dropped_tasks"])
+            deadline_violations += int(info.get("deadline_violations", info["dropped_tasks"]))
             total_delay += float(info["avg_delay"])
             total_queue += float(info["total_queue"])
             steps += 1
@@ -285,6 +302,8 @@ def evaluate(agent: LinearPPOAgent, episodes: int, seed: int) -> dict[str, float
                 "total_reward": total_reward,
                 "completed_tasks": completed,
                 "dropped_tasks": dropped,
+                "deadline_violations": deadline_violations,
+                "deadline_violation_rate": deadline_violations / max(completed + deadline_violations, 1),
                 "avg_delay": total_delay / max(steps, 1),
                 "avg_total_queue": total_queue / max(steps, 1),
             }
@@ -292,7 +311,15 @@ def evaluate(agent: LinearPPOAgent, episodes: int, seed: int) -> dict[str, float
     env.close()
     return {
         key: float(np.mean([item[key] for item in results]))
-        for key in ["total_reward", "completed_tasks", "dropped_tasks", "avg_delay", "avg_total_queue"]
+        for key in [
+            "total_reward",
+            "completed_tasks",
+            "dropped_tasks",
+            "deadline_violations",
+            "deadline_violation_rate",
+            "avg_delay",
+            "avg_total_queue",
+        ]
     }
 
 
@@ -348,6 +375,7 @@ def main() -> None:
         print(
             f"update={update_index} steps={env_steps} reward={row['rollout_reward']:.3f} "
             f"completed={row['completed_tasks']:.2f} dropped={row['dropped_tasks']:.2f} "
+            f"ddl_rate={row['deadline_violation_rate']:.3f} "
             f"avg_delay={row['avg_delay']:.3f} avg_total_queue={row['avg_total_queue']:.3f}"
         )
 
@@ -360,6 +388,7 @@ def main() -> None:
     print(
         f"eval episodes={args.eval_episodes} reward={eval_metrics['total_reward']:.3f} "
         f"completed={eval_metrics['completed_tasks']:.2f} dropped={eval_metrics['dropped_tasks']:.2f} "
+        f"ddl_rate={eval_metrics['deadline_violation_rate']:.3f} "
         f"avg_delay={eval_metrics['avg_delay']:.3f} avg_total_queue={eval_metrics['avg_total_queue']:.3f}"
     )
     print(f"wrote_metrics={metrics_path}")

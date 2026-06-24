@@ -31,6 +31,8 @@ METRIC_KEYS = [
     "total_reward",
     "completed_tasks",
     "dropped_tasks",
+    "deadline_violations",
+    "deadline_violation_rate",
     "avg_delay",
     "avg_total_queue",
     "steps",
@@ -49,6 +51,7 @@ def run_episode(env: MECEnv, policy_name: str, policy: PolicyFn, seed: int) -> d
     total_reward = 0.0
     total_completed = 0
     total_dropped = 0
+    total_deadline_violations = 0
     total_delay = 0.0
     total_queue = 0.0
     steps = 0
@@ -60,6 +63,7 @@ def run_episode(env: MECEnv, policy_name: str, policy: PolicyFn, seed: int) -> d
         total_reward += reward
         total_completed += int(info["completed_tasks"])
         total_dropped += int(info["dropped_tasks"])
+        total_deadline_violations += int(info.get("deadline_violations", info["dropped_tasks"]))
         total_delay += float(info["avg_delay"])
         total_queue += float(info["total_queue"])
         steps += 1
@@ -72,6 +76,9 @@ def run_episode(env: MECEnv, policy_name: str, policy: PolicyFn, seed: int) -> d
         "total_reward": total_reward,
         "completed_tasks": total_completed,
         "dropped_tasks": total_dropped,
+        "deadline_violations": total_deadline_violations,
+        "deadline_violation_rate": total_deadline_violations
+        / max(total_completed + total_deadline_violations, 1),
         "avg_delay": total_delay / max(steps, 1),
         "avg_total_queue": total_queue / max(steps, 1),
         "steps": steps,
@@ -93,6 +100,7 @@ def format_row(name: str, metrics: dict) -> str:
         f"{metrics['total_reward']:>14.3f}"
         f"{metrics['completed_tasks']:>14.2f}"
         f"{metrics['dropped_tasks']:>14.2f}"
+        f"{metrics['deadline_violation_rate']:>14.3f}"
         f"{metrics['avg_delay']:>14.3f}"
         f"{metrics['avg_total_queue']:>18.3f}"
     )
@@ -160,10 +168,11 @@ def main() -> None:
         f"{'avg_reward':>14}"
         f"{'completed':>14}"
         f"{'dropped':>14}"
+        f"{'ddl_rate':>14}"
         f"{'avg_delay':>14}"
         f"{'avg_total_queue':>18}"
     )
-    print("-" * 96)
+    print("-" * 110)
 
     aggregate_rows = []
     for index, name in enumerate(policy_names):

@@ -46,7 +46,7 @@ class MECEnv:
             self.users.append(User(user_id=user_id, position=position, velocity=velocity))
 
         obs = self._build_observation()
-        info = self._build_info(completed=0, dropped=0, avg_delay=0.0)
+        info = self._build_info(completed=0, deadline_violations=0, avg_delay=0.0)
         self.last_info = info
         return obs, info
 
@@ -59,7 +59,7 @@ class MECEnv:
         self._assign_offloads(accepted)
         completed_locally = self._process_local_compute()
         completed_on_mec = self._process_mec_pipeline()
-        dropped = self._drop_expired_tasks()
+        deadline_violations = self._drop_expired_tasks()
 
         completed = completed_locally + completed_on_mec
         avg_delay = (
@@ -67,9 +67,17 @@ class MECEnv:
             if completed
             else 0.0
         )
-        reward = self._compute_reward(avg_delay=avg_delay, completed=len(completed), dropped=dropped)
+        reward = self._compute_reward(
+            avg_delay=avg_delay,
+            completed=len(completed),
+            dropped=deadline_violations,
+        )
         done = self.current_step >= self.config.episode_length
-        info = self._build_info(completed=len(completed), dropped=dropped, avg_delay=avg_delay)
+        info = self._build_info(
+            completed=len(completed),
+            deadline_violations=deadline_violations,
+            avg_delay=avg_delay,
+        )
         info["accepted_action"] = accepted
         self.last_info = info
         return self._build_observation(), reward, done, info
@@ -248,12 +256,16 @@ class MECEnv:
             "max_offloads_per_step": self.config.max_offloads_per_step,
         }
 
-    def _build_info(self, completed: int, dropped: int, avg_delay: float) -> dict:
+    def _build_info(self, completed: int, deadline_violations: int, avg_delay: float) -> dict:
         total_queue = sum(len(user.queue) for user in self.users) + len(self.server.queue)
+        outcomes = completed + deadline_violations
+        deadline_violation_rate = deadline_violations / outcomes if outcomes else 0.0
         return {
             "step": self.current_step,
             "completed_tasks": completed,
-            "dropped_tasks": dropped,
+            "dropped_tasks": deadline_violations,
+            "deadline_violations": deadline_violations,
+            "deadline_violation_rate": round(deadline_violation_rate, 3),
             "avg_delay": round(avg_delay, 3),
             "total_queue": total_queue,
         }
