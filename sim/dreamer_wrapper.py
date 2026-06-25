@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from .config import MECConfig
 from .env import MECEnv
 from .gym_wrapper import GymnasiumMECEnv
@@ -33,6 +35,15 @@ def _to_legacy_space(space):
     return space
 
 
+def _resolve_runtime_config(
+    trace_path: str | None,
+    reward_preset: str | None,
+) -> tuple[str | None, str]:
+    trace_path = trace_path if trace_path is not None else os.environ.get("MEC_TRACE_PATH")
+    reward_preset = reward_preset or os.environ.get("MEC_REWARD_PRESET", "debug")
+    return trace_path, reward_preset
+
+
 class DreamerMECEnv(gym.Env if gym is not None else object):
     """
     Compatibility wrapper for DreamerV3's legacy Gym adapter.
@@ -44,10 +55,16 @@ class DreamerMECEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, action_mode: str = "box", trace_path: str | None = None, reward_preset: str = "debug"):
+    def __init__(
+        self,
+        action_mode: str = "box",
+        trace_path: str | None = None,
+        reward_preset: str | None = None,
+    ):
         if gym is None:
             raise ImportError("DreamerMECEnv requires gymnasium to be installed.")
         super().__init__()
+        trace_path, reward_preset = _resolve_runtime_config(trace_path, reward_preset)
         self.env = GymnasiumMECEnv(
             MECEnv(MECConfig(task_trace_path=trace_path, reward_preset=reward_preset)),
             action_mode=action_mode,
@@ -77,10 +94,16 @@ class LegacyDreamerMECEnv(legacy_gym.Env if legacy_gym is not None else object):
 
     metadata = {"render.modes": []}
 
-    def __init__(self, action_mode: str = "box", trace_path: str | None = None, reward_preset: str = "debug"):
+    def __init__(
+        self,
+        action_mode: str = "box",
+        trace_path: str | None = None,
+        reward_preset: str | None = None,
+    ):
         if legacy_gym is None:
             raise ImportError("LegacyDreamerMECEnv requires gym to be installed.")
         super().__init__()
+        trace_path, reward_preset = _resolve_runtime_config(trace_path, reward_preset)
         self.env = GymnasiumMECEnv(
             MECEnv(MECConfig(task_trace_path=trace_path, reward_preset=reward_preset)),
             action_mode=action_mode,
