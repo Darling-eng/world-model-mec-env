@@ -273,13 +273,22 @@ def compute_gae(
     return advantages, returns
 
 
-def make_env(trace_path: Path | None = None) -> GymnasiumMECEnv:
-    config = MECConfig(task_trace_path=str(trace_path) if trace_path is not None else None)
+def make_env(trace_path: Path | None = None, reward_preset: str = "debug") -> GymnasiumMECEnv:
+    config = MECConfig(
+        task_trace_path=str(trace_path) if trace_path is not None else None,
+        reward_preset=reward_preset,
+    )
     return GymnasiumMECEnv(MECEnv(config), action_mode="box")
 
 
-def evaluate(agent: LinearPPOAgent, episodes: int, seed: int, trace_path: Path | None = None) -> dict[str, float]:
-    env = make_env(trace_path)
+def evaluate(
+    agent: LinearPPOAgent,
+    episodes: int,
+    seed: int,
+    trace_path: Path | None = None,
+    reward_preset: str = "debug",
+) -> dict[str, float]:
+    env = make_env(trace_path, reward_preset)
     results = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
@@ -342,6 +351,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument("--log-dir", type=Path, default=Path("outputs/ppo_mec"), help="Directory for logs and model.")
     parser.add_argument("--trace", type=Path, default=None, help="Optional normalized task trace CSV.")
+    parser.add_argument(
+        "--reward-preset",
+        choices=["debug", "sla"],
+        default="debug",
+        help="Reward preset. debug preserves old experiments; sla emphasizes completion and deadline safety.",
+    )
     return parser.parse_args()
 
 
@@ -352,7 +367,7 @@ def main() -> None:
         rollout_steps=args.rollout_steps,
         seed=args.seed,
     )
-    env = make_env(args.trace)
+    env = make_env(args.trace, args.reward_preset)
     obs_dim = int(env.observation_space.shape[0])
     action_dim = int(env.action_space.shape[0])
     agent = LinearPPOAgent(obs_dim, action_dim, config)
@@ -385,7 +400,13 @@ def main() -> None:
             f"avg_delay={row['avg_delay']:.3f} avg_total_queue={row['avg_total_queue']:.3f}"
         )
 
-    eval_metrics = evaluate(agent, args.eval_episodes, seed=config.seed + 1_000_000, trace_path=args.trace)
+    eval_metrics = evaluate(
+        agent,
+        args.eval_episodes,
+        seed=config.seed + 1_000_000,
+        trace_path=args.trace,
+        reward_preset=args.reward_preset,
+    )
     eval_row = {"phase": "eval", "episodes": args.eval_episodes, **eval_metrics}
     append_jsonl(metrics_path, eval_row)
     agent.save(args.log_dir / "ppo_linear_model.npz")

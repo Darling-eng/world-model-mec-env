@@ -23,8 +23,11 @@ class MECConfig:
     pathloss_bias: float = 8.0
     channel_noise: float = 0.15
 
+    reward_preset: str = "debug"
     delay_penalty: float = 1.0
     drop_penalty: float = 4.0
     queue_penalty: float = 0.1
+    completion_bonus: float = 1.0
+    sla_violation_penalty: float = 6.0
 
     random_seed: int | None = 7

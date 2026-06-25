@@ -165,10 +165,16 @@ def main() -> None:
         default=None,
         help="Optional normalized task trace CSV. When set, task arrivals come from the trace.",
     )
+    parser.add_argument(
+        "--reward-preset",
+        choices=["debug", "sla"],
+        default="debug",
+        help="Reward preset. debug preserves old experiments; sla emphasizes completion and deadline safety.",
+    )
     args = parser.parse_args()
 
     policy_names = selected_policy_names(args.policy)
-    print(f"episodes={args.episodes} seed={args.seed} policy={args.policy}")
+    print(f"episodes={args.episodes} seed={args.seed} policy={args.policy} reward_preset={args.reward_preset}")
     print(
         f"{'policy':<18}"
         f"{'avg_reward':>14}"
@@ -187,6 +193,7 @@ def main() -> None:
             MECConfig(
                 random_seed=args.seed + index,
                 task_trace_path=str(args.trace) if args.trace is not None else None,
+                reward_preset=args.reward_preset,
             )
         )
         policy = policy_builder(env)

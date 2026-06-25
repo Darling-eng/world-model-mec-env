@@ -268,12 +268,21 @@ class MECEnv:
 
     def _compute_reward(self, avg_delay: float, completed: int, dropped: int) -> float:
         total_queue = sum(len(user.queue) for user in self.users) + len(self.server.queue)
-        return (
-            -self.config.delay_penalty * avg_delay
-            -self.config.drop_penalty * dropped
-            -self.config.queue_penalty * total_queue
-            + 0.2 * completed
-        )
+        if self.config.reward_preset == "debug":
+            return (
+                -self.config.delay_penalty * avg_delay
+                -self.config.drop_penalty * dropped
+                -self.config.queue_penalty * total_queue
+                + 0.2 * completed
+            )
+        if self.config.reward_preset == "sla":
+            return (
+                self.config.completion_bonus * completed
+                - self.config.delay_penalty * avg_delay
+                - self.config.sla_violation_penalty * dropped
+                - self.config.queue_penalty * total_queue
+            )
+        raise ValueError(f"Unknown reward_preset: {self.config.reward_preset}")
 
     def _build_observation(self) -> dict:
         per_user = []
