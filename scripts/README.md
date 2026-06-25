@@ -32,6 +32,20 @@ python eval_baselines.py --episodes 50 --seed 7 --output outputs/baselines.jsonl
 python scripts/run_ppo_mec.py --steps 2000 --rollout-steps 256 --eval-episodes 5 --seed 7
 ```
 
+## 训练 SAC（软演员评论家）与 MEC
+
+这个入口使用 Stable-Baselines3（稳定基线3库）的 SAC baseline（软演员评论家基线），适合在 Colab 上运行：
+
+```bash
+python scripts/run_sac_mec.py \
+  --trace /content/world-model-mec-env/trace_alibaba_sample_codex.csv \
+  --reward-preset sla \
+  --steps 10000 \
+  --eval-episodes 5 \
+  --seed 7 \
+  --log-dir /content/world-model-mec-env/colab_results/sac_trace_sla_seed7_10k
+```
+
 ## 在 Colab 运行 DreamerV3 与 MEC
 
 合成负载 smoke run（冒烟运行）示例：
