@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from .config import MECConfig
 from .entities import MECServer, Task, User
+from .trace import TraceTaskSpec, load_trace_tasks
 
 
 class MECEnv:
@@ -27,6 +28,7 @@ class MECEnv:
         self.current_step = 0
         self.next_task_id = 0
         self.last_info: dict = {}
+        self.trace_tasks = self._load_trace_tasks()
 
     def reset(self, seed: int | None = None) -> tuple[dict, dict]:
         if seed is not None:
@@ -120,6 +122,10 @@ class MECEnv:
                 user.velocity *= -1.0
 
     def _generate_tasks(self) -> None:
+        if self.trace_tasks is not None:
+            self._generate_trace_tasks()
+            return
+
         for user in self.users:
             if self.rng.random() > self.config.task_arrival_prob:
                 continue
@@ -136,6 +142,43 @@ class MECEnv:
             )
             self.next_task_id += 1
             user.queue.append(task)
+
+    def _generate_trace_tasks(self) -> None:
+        assert self.trace_tasks is not None
+        for trace_task in self.trace_tasks.get(self.current_step, []):
+            user = self.users[trace_task.user_id]
+            if trace_task.position is not None:
+                user.position = max(0.0, min(self.config.area_size, trace_task.position))
+            task = self._make_task(
+                size=trace_task.size,
+                cycles=trace_task.cycles,
+                deadline=self.current_step + trace_task.deadline,
+                upload=trace_task.upload,
+            )
+            user.queue.append(task)
+
+    def _make_task(self, *, size: float, cycles: float, deadline: int, upload: float) -> Task:
+        task = Task(
+            task_id=self.next_task_id,
+            size=size,
+            total_cycles=cycles,
+            remaining_cycles=cycles,
+            created_step=self.current_step,
+            deadline_step=deadline,
+            remaining_upload=upload,
+        )
+        self.next_task_id += 1
+        return task
+
+    def _load_trace_tasks(self) -> dict[int, list[TraceTaskSpec]] | None:
+        if not self.config.task_trace_path:
+            return None
+        return load_trace_tasks(
+            self.config.task_trace_path,
+            num_users=self.config.num_users,
+            default_deadline=self.config.task_deadline,
+            cycles_per_unit=self.config.task_cycles_per_unit,
+        )
 
     def _assign_offloads(self, accepted: list[int]) -> None:
         for user_id in accepted:

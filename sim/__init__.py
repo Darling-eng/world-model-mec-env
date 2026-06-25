@@ -10,6 +10,7 @@ from .policies import (
     random_policy,
 )
 from .rollout import Transition, collect_episode
+from .trace import TraceTaskSpec, load_trace_tasks
 from .vector import (
     action_to_binary_vector,
     binary_vector_to_action,
@@ -27,12 +28,14 @@ __all__ = [
     "register_dreamer_envs",
     "register_gym_envs",
     "Transition",
+    "TraceTaskSpec",
     "action_to_binary_vector",
     "binary_vector_to_action",
     "best_uplink_rate_policy",
     "collect_episode",
     "flatten_observation",
     "largest_queue_policy",
+    "load_trace_tasks",
     "local_only_policy",
     "observation_vector_length",
     "random_policy",

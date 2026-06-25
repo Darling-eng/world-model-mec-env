@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .config import MECConfig
+from .env import MECEnv
 from .gym_wrapper import GymnasiumMECEnv
 
 try:
@@ -42,11 +44,11 @@ class DreamerMECEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, action_mode: str = "box"):
+    def __init__(self, action_mode: str = "box", trace_path: str | None = None):
         if gym is None:
             raise ImportError("DreamerMECEnv requires gymnasium to be installed.")
         super().__init__()
-        self.env = GymnasiumMECEnv(action_mode=action_mode)
+        self.env = GymnasiumMECEnv(MECEnv(MECConfig(task_trace_path=trace_path)), action_mode=action_mode)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
 
@@ -72,11 +74,11 @@ class LegacyDreamerMECEnv(legacy_gym.Env if legacy_gym is not None else object):
 
     metadata = {"render.modes": []}
 
-    def __init__(self, action_mode: str = "box"):
+    def __init__(self, action_mode: str = "box", trace_path: str | None = None):
         if legacy_gym is None:
             raise ImportError("LegacyDreamerMECEnv requires gym to be installed.")
         super().__init__()
-        self.env = GymnasiumMECEnv(action_mode=action_mode)
+        self.env = GymnasiumMECEnv(MECEnv(MECConfig(task_trace_path=trace_path)), action_mode=action_mode)
         self.observation_space = _to_legacy_space(self.env.observation_space)
         self.action_space = _to_legacy_space(self.env.action_space)
 

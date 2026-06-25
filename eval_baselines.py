@@ -159,6 +159,12 @@ def main() -> None:
         default="auto",
         help="Result file format. With auto, .jsonl writes JSONL and every other suffix writes CSV.",
     )
+    parser.add_argument(
+        "--trace",
+        type=Path,
+        default=None,
+        help="Optional normalized task trace CSV. When set, task arrivals come from the trace.",
+    )
     args = parser.parse_args()
 
     policy_names = selected_policy_names(args.policy)
@@ -177,7 +183,12 @@ def main() -> None:
     aggregate_rows = []
     for index, name in enumerate(policy_names):
         policy_builder = POLICY_BUILDERS[name]
-        env = MECEnv(MECConfig(random_seed=args.seed + index))
+        env = MECEnv(
+            MECConfig(
+                random_seed=args.seed + index,
+                task_trace_path=str(args.trace) if args.trace is not None else None,
+            )
+        )
         policy = policy_builder(env)
         episode_results = [
             run_episode(env, name, policy, seed=args.seed + index * 1000 + episode)

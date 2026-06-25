@@ -14,6 +14,7 @@ class MECConfig:
     task_size_max: float = 10.0
     task_cycles_per_unit: float = 6.0
     task_deadline: int = 12
+    task_trace_path: str | None = None
 
     local_compute_rate: float = 4.0
     mec_compute_rate: float = 14.0

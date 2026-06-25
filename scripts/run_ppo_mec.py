@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from sim import GymnasiumMECEnv
+from sim import GymnasiumMECEnv, MECConfig, MECEnv
 
 
 @dataclass
@@ -273,8 +273,13 @@ def compute_gae(
     return advantages, returns
 
 
-def evaluate(agent: LinearPPOAgent, episodes: int, seed: int) -> dict[str, float]:
-    env = GymnasiumMECEnv(action_mode="box")
+def make_env(trace_path: Path | None = None) -> GymnasiumMECEnv:
+    config = MECConfig(task_trace_path=str(trace_path) if trace_path is not None else None)
+    return GymnasiumMECEnv(MECEnv(config), action_mode="box")
+
+
+def evaluate(agent: LinearPPOAgent, episodes: int, seed: int, trace_path: Path | None = None) -> dict[str, float]:
+    env = make_env(trace_path)
     results = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
@@ -336,6 +341,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-episodes", type=int, default=5, help="Evaluation episodes after training.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument("--log-dir", type=Path, default=Path("outputs/ppo_mec"), help="Directory for logs and model.")
+    parser.add_argument("--trace", type=Path, default=None, help="Optional normalized task trace CSV.")
     return parser.parse_args()
 
 
@@ -346,7 +352,7 @@ def main() -> None:
         rollout_steps=args.rollout_steps,
         seed=args.seed,
     )
-    env = GymnasiumMECEnv(action_mode="box")
+    env = make_env(args.trace)
     obs_dim = int(env.observation_space.shape[0])
     action_dim = int(env.action_space.shape[0])
     agent = LinearPPOAgent(obs_dim, action_dim, config)
@@ -379,7 +385,7 @@ def main() -> None:
             f"avg_delay={row['avg_delay']:.3f} avg_total_queue={row['avg_total_queue']:.3f}"
         )
 
-    eval_metrics = evaluate(agent, args.eval_episodes, seed=config.seed + 1_000_000)
+    eval_metrics = evaluate(agent, args.eval_episodes, seed=config.seed + 1_000_000, trace_path=args.trace)
     eval_row = {"phase": "eval", "episodes": args.eval_episodes, **eval_metrics}
     append_jsonl(metrics_path, eval_row)
     agent.save(args.log_dir / "ppo_linear_model.npz")
