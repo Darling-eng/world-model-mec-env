@@ -6,7 +6,9 @@ from .gym_wrapper import GymnasiumMECEnv
 from .policies import (
     best_uplink_rate_policy,
     largest_queue_policy,
+    least_loaded_edge_policy,
     local_only_policy,
+    nearest_edge_policy,
     random_policy,
 )
 from .rollout import Transition, collect_episode
@@ -35,8 +37,10 @@ __all__ = [
     "collect_episode",
     "flatten_observation",
     "largest_queue_policy",
+    "least_loaded_edge_policy",
     "load_trace_tasks",
     "local_only_policy",
+    "nearest_edge_policy",
     "observation_vector_length",
     "random_policy",
     "score_vector_to_action",

@@ -81,14 +81,14 @@ def append_jsonl(path: Path, row: dict) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a Stable-Baselines3 SAC baseline on the MEC environment.")
-    parser.add_argument("--steps", type=int, default=10_000, help="Total SAC training timesteps.")
-    parser.add_argument("--eval-episodes", type=int, default=5, help="Evaluation episodes after training.")
+    parser = argparse.ArgumentParser(description="Train a Stable-Baselines3 PPO baseline on the MEC environment.")
+    parser.add_argument("--steps", type=int, default=50_000, help="Total PPO training timesteps.")
+    parser.add_argument("--eval-episodes", type=int, default=20, help="Evaluation episodes after training.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument(
         "--log-dir",
         type=Path,
-        default=Path("experiment_records/sac_mec"),
+        default=Path("experiment_records/sb3_ppo_mec"),
         help="Directory for logs and model.",
     )
     parser.add_argument("--trace", type=Path, default=None, help="Optional normalized task trace CSV.")
@@ -98,21 +98,25 @@ def parse_args() -> argparse.Namespace:
         default="debug",
         help="Reward preset. debug preserves old experiments; sla emphasizes completion and deadline safety.",
     )
-    parser.add_argument("--learning-rate", type=float, default=3e-4, help="SAC learning rate.")
-    parser.add_argument("--buffer-size", type=int, default=100_000, help="Replay buffer size.")
-    parser.add_argument("--learning-starts", type=int, default=1_000, help="Timesteps before SAC updates start.")
-    parser.add_argument("--batch-size", type=int, default=256, help="SAC minibatch size.")
+    parser.add_argument("--learning-rate", type=float, default=3e-4, help="PPO learning rate.")
+    parser.add_argument("--n-steps", type=int, default=1024, help="PPO rollout steps before each update.")
+    parser.add_argument("--batch-size", type=int, default=256, help="PPO minibatch size.")
+    parser.add_argument("--n-epochs", type=int, default=10, help="PPO optimization epochs per rollout.")
+    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor.")
+    parser.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda.")
+    parser.add_argument("--clip-range", type=float, default=0.2, help="PPO clip range.")
+    parser.add_argument("--ent-coef", type=float, default=0.0, help="Entropy coefficient.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     try:
-        from stable_baselines3 import SAC
+        from stable_baselines3 import PPO
         from stable_baselines3.common.monitor import Monitor
     except ImportError as exc:  # pragma: no cover - optional Colab dependency
         raise ImportError(
-            "run_sac_mec.py requires stable-baselines3. Install with: pip install stable-baselines3"
+            "run_sb3_ppo_mec.py requires stable-baselines3. Install with: pip install stable-baselines3"
         ) from exc
 
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -121,18 +125,22 @@ def main() -> None:
         metrics_path.unlink()
 
     env = Monitor(make_env(args.trace, args.reward_preset, args.seed))
-    model = SAC(
+    model = PPO(
         "MlpPolicy",
         env,
         seed=args.seed,
         learning_rate=args.learning_rate,
-        buffer_size=args.buffer_size,
-        learning_starts=args.learning_starts,
+        n_steps=args.n_steps,
         batch_size=args.batch_size,
+        n_epochs=args.n_epochs,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        clip_range=args.clip_range,
+        ent_coef=args.ent_coef,
         verbose=1,
     )
     model.learn(total_timesteps=args.steps, progress_bar=False)
-    model.save(args.log_dir / "sac_model")
+    model.save(args.log_dir / "ppo_model")
     env.close()
 
     eval_metrics = evaluate(
@@ -143,7 +151,7 @@ def main() -> None:
         reward_preset=args.reward_preset,
     )
     row = {
-        "algorithm": "sac",
+        "algorithm": "sb3_ppo",
         "phase": "eval",
         "episodes": args.eval_episodes,
         "seed": args.seed,

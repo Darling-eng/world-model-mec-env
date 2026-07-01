@@ -38,3 +38,70 @@ def largest_queue_policy(obs: dict) -> list[int]:
         if len(chosen) >= obs["max_offloads_per_step"]:
             break
     return chosen
+
+
+def nearest_edge_policy(obs: dict) -> list[tuple[int, int]]:
+    users = sorted(
+        obs["users"],
+        key=lambda item: (item["queue_length"], item["current_task_remaining_cycles"]),
+        reverse=True,
+    )
+    chosen: list[tuple[int, int]] = []
+    for user in users:
+        if user["queue_length"] <= 0:
+            continue
+        server_id = _nearest_reachable_server(obs, user)
+        chosen.append((user["user_id"], server_id))
+        if len(chosen) >= obs["max_offloads_per_step"]:
+            break
+    return chosen
+
+
+def least_loaded_edge_policy(obs: dict) -> list[tuple[int, int]]:
+    users = sorted(
+        obs["users"],
+        key=lambda item: (item["queue_length"], item["current_task_remaining_cycles"]),
+        reverse=True,
+    )
+    chosen: list[tuple[int, int]] = []
+    for user in users:
+        if user["queue_length"] <= 0:
+            continue
+        server_id = _least_loaded_reachable_server(obs, user)
+        chosen.append((user["user_id"], server_id))
+        if len(chosen) >= obs["max_offloads_per_step"]:
+            break
+    return chosen
+
+
+def _nearest_reachable_server(obs: dict, user: dict) -> int:
+    servers = obs.get("servers") or [{"server_id": 0, "position": 0.0, "queue_length": 0}]
+    reachable_ids = _reachable_server_ids(user)
+    candidates = [server for server in servers if server["server_id"] in reachable_ids] or servers
+    best = min(candidates, key=lambda server: (abs(float(user["position"]) - float(server["position"])), server["server_id"]))
+    return int(best["server_id"])
+
+
+def _least_loaded_reachable_server(obs: dict, user: dict) -> int:
+    servers = obs.get("servers") or [{"server_id": 0, "position": 0.0, "queue_length": 0}]
+    reachable_ids = _reachable_server_ids(user)
+    candidates = [server for server in servers if server["server_id"] in reachable_ids] or servers
+    best = min(
+        candidates,
+        key=lambda server: (
+            int(server["queue_length"]),
+            abs(float(user["position"]) - float(server["position"])),
+            int(server["server_id"]),
+        ),
+    )
+    return int(best["server_id"])
+
+
+def _reachable_server_ids(user: dict) -> set[int]:
+    rates = user.get("server_rates") or []
+    reachable = {
+        int(item["server_id"])
+        for item in rates
+        if item.get("reachable", True)
+    }
+    return reachable

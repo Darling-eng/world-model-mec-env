@@ -15,9 +15,21 @@ class MECConfig:
     task_cycles_per_unit: float = 6.0
     task_deadline: int = 12
     task_trace_path: str | None = None
+    task_type_count: int = 1
+    task_type_names: tuple[str, ...] | None = None
+    task_type_probabilities: tuple[float, ...] | None = None
+    task_cycles_per_unit_by_type: tuple[float, ...] | None = None
+    task_deadlines_by_type: tuple[int, ...] | None = None
+    task_output_ratios_by_type: tuple[float, ...] | None = None
+    task_priorities_by_type: tuple[float, ...] | None = None
 
     local_compute_rate: float = 4.0
     mec_compute_rate: float = 14.0
+    num_edge_servers: int = 1
+    edge_server_positions: tuple[float, ...] | None = None
+    edge_server_compute_rates: tuple[float, ...] | None = None
+    edge_server_coverage_radius: float | None = None
+    edge_selection_policy: str = "nearest"
 
     base_uplink_rate: float = 12.0
     pathloss_bias: float = 8.0

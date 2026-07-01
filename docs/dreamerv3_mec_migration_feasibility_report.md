@@ -1,482 +1,135 @@
-# DreamerV3 到 MEC 卸载场景的迁移可行性分析报告
+# DreamerV3 迁移到 MEC 卸载场景的可行性报告
 
-## 1. 结论先行
+## 1. 结论概览
 
-结论是明确可行，而且当前工作区里的最小 MEC 仿真器已经具备了第一阶段迁移的基本条件。
+DreamerV3 可以迁移到当前 Python MEC 仿真环境中，用于验证世界模型强化学习在任务卸载问题上的可行性。当前代码已经具备最小闭环：
 
-这件事的核心不是“把 DreamerV3 生硬套到边缘卸载”，而是把世界模型重新解释成一个**learned generative digital twin for edge services**。这个 framing 比“我们用了 model-based RL”更强，因为它同时回答了服务计算 reviewer 最关心的三个问题：
+- MEC 环境；
+- Gymnasium wrapper；
+- DreamerV3 环境注册；
+- trace-driven workload；
+- SLA reward；
+- baseline 评估和结果聚合。
 
-1. 为什么不是继续做 model-free DRL；
-2. 为什么这个方法适合高动态、代价敏感的边缘环境；
-3. 这件事与近年服务计算社区热衷的 digital twin 有什么天然联系。
+但是，当前仿真环境仍偏轻量，不能直接支撑强论文结论。DreamerV3 的迁移是可行的，但更重要的是先提高仿真环境的可信度。
 
-从研究定位上看，13 号论文的重要性不在于它“已经把所有问题做完了”，而在于它证明了一条很近的技术路线：**在无线/边缘风格的动态系统里，用学得的潜在动力学替代昂贵真实交互，用 imagination 支撑长程控制。**
+## 2. 为什么 DreamerV3 适合尝试
 
-因此，你们最合理的策略不是复现它，而是以它为近线 baseline，把问题切换到 `MEC offloading / service orchestration / QoS assurance`，再叠加一层服务计算社区更容易接受的包装，即“学得的生成式数字孪生”。
+MEC offloading 是一个具有时序依赖的决策问题：
 
-## 2. 13 号论文的真正含义
+- 当前卸载会影响未来队列；
+- 用户移动会影响未来链路质量；
+- 任务 deadline 会让短期和长期收益冲突；
+- server 负载会影响后续任务延迟。
 
-根据论文摘要与公开信息，`World Model-Based Learning for Long-Term Age of Information Minimization in Vehicular Networks` 的主线可以概括为三句话：
+DreamerV3 的优势在于学习世界模型，并在 latent imagination 中优化策略。理论上，它可以比单步启发式策略更好地处理未来队列、延迟和 SLA 风险。
 
-1. 它研究的是一个**高动态、强时序耦合**的车联网控制问题；
-2. 它不是只做短视的即时优化，而是直接面向**长期 AoI 最小化**；
-3. 它通过**世界模型 + imagination-based learning** 来提高样本效率，并改善长期控制表现。
+## 3. 当前环境适配情况
 
-论文报告的结果也强化了这条 story：相对所比较的基线，其方法在长期 AoI 指标上取得了明显改进，并强调了在高移动性、复杂动态环境中世界模型方法的优势。  
-参考来源： [arXiv](https://arxiv.org/abs/2505.01712), [论文摘要镜像](https://www.alphaxiv.org/overview/2505.01712v1)
+已完成：
 
-这篇文章对你们的意义，不是“它用了某个具体网络结构，所以我们也照搬”，而是它已经帮你们向 reviewer 证明了下面这个前提：
+- `sim/env.py`：核心 MEC 环境；
+- `sim/gym_wrapper.py`：Gymnasium 兼容接口；
+- `sim/dreamer_wrapper.py`：DreamerV3 环境封装；
+- `scripts/run_dreamer_mec.py`：DreamerV3 启动入口；
+- `sim/gym_registration.py`：环境注册；
+- `csv/trace_alibaba_sample_codex.csv`：trace workload；
+- `scripts/aggregate_experiment_results.py`：结果聚合。
 
-> 在通信-计算耦合、状态快速变化、长期目标重要的问题里，world model 不是不合时宜的 exotic trick，而是合理且有效的控制范式。
+当前 DreamerV3 能够在 trace + SLA reward 设置下完成 smoke run，说明接口层面已经打通。
 
-你们后续要做的是把这个前提迁移到 MEC 语境下，并让故事更贴近 TSC/TMC 的评审口味。
+## 4. 当前主要风险
 
-## 3. 为什么 MEC 与世界模型高度匹配
+### 4.1 仿真器过于简化
 
-### 3.1 样本效率痛点高度匹配
+当前环境只有单 MEC server、一维移动、简单 uplink rate 和 FIFO 队列。这足以验证算法接口，但不足以代表真实 MEC 场景。
 
-MEC 卸载、服务迁移、编排这类问题，传统 DRL 最大的问题一直不是“能不能学”，而是“学的代价是否可接受”。  
-真实系统中的失败探索会直接转化为：
+### 4.2 动作空间仍然简单
 
-- 任务时延恶化，
-- SLA/QoS 违约，
-- 资源浪费，
-- 运营成本上升。
+当前动作本质上是选择哪些用户卸载，而不是选择卸载到哪个 edge server 或 cloud。缺少多目标资源选择，限制了 RL 策略的发挥空间。
 
-世界模型的价值就在于：先用真实交互数据学出一个可滚动预测的环境模型，再在想象轨迹里优化策略，把大量试错从真实环境挪到潜在空间里完成。
+### 4.3 observation 是扁平向量
 
-### 3.2 非平稳性痛点高度匹配
+用户、任务、链路、服务器特征混在一个向量里，可能不利于世界模型学习结构化动态。
 
-边缘服务环境天然非平稳：
+### 4.4 baseline 还不完整
 
-- 用户移动导致链路质量变化；
-- 任务到达过程突发；
-- MEC 队列状态快速演化；
-- 多个局部决策相互影响。
+轻量 PPO 只能作为 smoke baseline。正式对比需要 SB3 PPO、SAC、DreamerV3 和启发式策略在相同配置下多 seed 运行。
 
-这种情况下，单纯依赖历史回报拟合的 model-free 方法容易在分布漂移时退化。世界模型则更适合做：
+## 5. 可行迁移路线
 
-- 未来演化预测，
-- counterfactual 推演，
-- 基于不确定性的保守决策。
+### 阶段一：接口验证
 
-### 3.3 长程规划能力高度匹配
+已完成：
 
-MEC 卸载不是一步一看天的控制。当前时刻是否把某个用户任务送到 MEC，要看：
+- DreamerV3 能启动；
+- 环境能返回 observation/reward/done/info；
+- trace 和 reward preset 能传入环境；
+- metrics 能落盘。
 
-- 未来几步链路是否会恶化，
-- MEC 队列会不会拥塞，
-- 本地队列是否会积压，
-- 当前动作会不会挤占后续更紧急任务的机会。
+### 阶段二：环境可信度补强
 
-这本质上就是 long-horizon sequential decision making，而 Dreamer 类方法恰好擅长在 latent dynamics 上做多步 imagination。
+优先补：
 
-### 3.4 与数字孪生叙事天然契合
+1. 多 edge server；
+2. server heterogeneity；
+3. task type 和 deadline 分布；
+4. 网络带宽竞争；
+5. utilization / network usage 指标。
 
-服务计算社区接受 digital twin，因为它提供了一个统一叙事：  
-“先构建系统镜像，再做预测、调优和闭环控制。”
+### 阶段三：正式实验
 
-问题是，现有 edge digital twin 工作常常停留在：
+固定：
 
-- 手工建模，
-- 规则引擎，
-- 离线仿真，
-- 不可微、难联训的代理器。
+- scenario；
+- trace；
+- reward；
+- seed；
+- evaluation episodes；
+- output schema。
 
-世界模型可以把 digital twin 升级成：
+对比：
 
-- 学出来的，
-- 生成式的，
-- 可微的，
-- 能做 counterfactual rollout 的系统代理。
+- heuristic；
+- SB3 PPO；
+- SAC；
+- DreamerV3。
 
-所以最值得坚持的包装不是“Dreamer for offloading”，而是：
+### 阶段四：方法创新
 
-**A learned generative digital twin for long-horizon edge service control.**
+根据实验结果选择：
 
-## 4. 从 13 号论文迁移到 MEC 卸载，哪里相同，哪里不同
+- uncertainty-aware offloading；
+- heterogeneous numeric encoder；
+- generative digital twin framing。
 
-### 4.1 相同点
+## 6. 对论文的意义
 
-迁移成立的根本原因，是两个问题在结构上非常接近：
+如果只是把 DreamerV3 跑在简单 MEC 环境上，论文贡献偏弱。
 
-- 都是时序决策问题；
-- 都存在动作对未来状态的延迟影响；
-- 都有显著环境动态性；
-- 都适合长期目标优化；
-- 都不适合高代价的真实探索。
-
-因此，13 号论文里的核心范式可以迁移：
-
-- 学潜在状态；
-- 用潜在状态预测未来；
-- 在 imagined trajectories 上学 actor / critic；
-- 用长期回报而不是一步贪心来优化控制。
-
-### 4.2 不同点
-
-真正需要修改的，不是“Dreamer 能不能用”，而是问题接口本身：
-
-1. **目标不同**  
-   13 号论文优化的是长期 AoI；MEC 卸载更自然的目标是时延、丢弃、队列积压、SLA 违约、能耗或其组合。
-
-2. **观测模态不同**  
-   不是图像，也不是规整的单模态时间序列，而是用户级和系统级混合的异构数值观测。
-
-3. **动作结构不同**  
-   当前环境里动作是“选哪些用户在本步卸载”，本质上是带容量约束的组合动作。
-
-4. **可解释诉求不同**  
-   在 MEC 语境下，reviewer 会更看重：
-   - 为什么此时卸载而不是本地处理；
-   - 为什么该用户优先；
-   - 未来几步会发生什么；
-   - 是否能通过模型提供 what-if 分析。
-
-这恰好又反过来支持 digital twin 的 story。
-
-## 5. 基于当前仿真器的迁移可行性评估
-
-### 5.1 已具备的条件
-
-当前代码库已经有一套足够好的第一阶段实验骨架：
-
-- `sim/env.py`：提供了移动、任务到达、上传、MEC 排队和执行的耦合动力学；
-- `sim/vector.py`：已经可以把观测拍平成固定长度向量；
-- `sim/rollout.py`：已经能收集 `(obs, action, reward, next_obs, done)`；
-- `sim/gym_wrapper.py`：已经提供面向 RL 接口的 Gymnasium 风格封装；
-- `sim/policies.py`：已经有随机、local-only、best-rate、largest-queue 等启发式基线。
-
-这意味着第一阶段不需要再争论“要不要先做环境”，因为最小可用环境已经存在。
-
-### 5.2 当前环境为什么适合 DreamerV3 迁移
-
-DreamerV3 需要的关键条件包括：
-
-1. 固定维度观测或可编码观测；
-2. 可重复交互环境；
-3. 明确奖励；
-4. 具备 delayed consequence；
-5. 能收集大量 transition；
-6. 最好有 partial observability 或 hidden dynamics，避免问题过于平凡。
-
-当前环境已经满足前五项，并部分满足第六项：
-
-- 链路速率由位置决定，但执行时带噪声；
-- 用户移动、任务到达和队列演化共同形成隐藏动力学；
-- 当前动作会影响未来若干步队列和完成时延。
-
-因此，从“能不能作为 DreamerV3 的第一个迁移场景”这个问题看，答案是肯定的。
-
-### 5.3 当前环境的不足
-
-如果目标是“先做迁移验证”，当前环境足够。  
-如果目标是“写出一篇更像样的论文”，当前环境仍需补强：
-
-- 只有单 MEC 服务器，缺少空间选择与迁移复杂度；
-- 当前奖励仍偏工程占位符，缺少更清晰的 SLA 或风险语义；
-- 动作是简单的 user subset，尚未建模更细粒度的资源分配；
-- 观测仍然接近 fully observable，数字孪生优势还不够突出；
-- 没有显式 uncertainty 建模，也没有 counterfactual 接口。
-
-所以它适合做：
-
-- 第一版 Dreamer 迁移，
-- 训练管线打通，
-- 基线对比，
-- ablation 原型。
-
-但不适合直接当期刊终稿环境。
-
-## 6. DreamerV3 迁移设计：状态、动作、奖励、编码
-
-## 6.1 状态定义
-
-当前观测已经比较合理，属于“结构化数值状态”。  
-建议把状态拆成两层：
-
-- **全局状态**
-  - 当前时间步
-  - MEC 队列长度
-  - 本步最大可卸载数
-
-- **用户级状态**
-  - 位置
-  - 速度
-  - 本地队列长度
-  - 头部任务大小
-  - 头部任务剩余计算量
-  - 当前上行速率
-
-后续建议增加但不必在第一版就上：
-
-- 任务剩余 deadline / slack；
-- 用户任务优先级；
-- 能耗估计；
-- 历史平均服务时延；
-- 链路波动统计量；
-- server utilization 而不是只看 queue length。
-
-### 6.2 动作定义
-
-当前动作是“选定若干 user id 进行卸载”，这是一个合理的第一版接口。
-
-它的优点：
-
-- 贴合当前环境；
-- 易于与启发式基线比较；
-- 能直接映射到 `MultiBinary(num_users)`。
-
-它的问题：
-
-- 带容量约束的组合动作对标准 Dreamer 不够友好；
-- `MultiBinary` 会产生很多无效组合，环境再截断会带来训练噪声；
-- 用户数量一增大，动作空间爆炸很快出现。
-
-因此建议分两阶段：
-
-1. **第一阶段：保留现有动作定义**  
-   用 `MultiBinary` 或二值向量动作先跑通。
-
-2. **第二阶段：改成更规范的受约束动作**  
-   例如：
-   - 顺序选择 `K` 个用户；
-   - top-k pointer/policy；
-   - “每用户本地/卸载”二值决策再加 action mask；
-   - 或把动作改为“对队列最前若干候选做优先级排序”。
-
-第一篇文章没必要在动作设计上一次做到最复杂，先保留最小可训练版本更稳。
-
-### 6.3 奖励定义
-
-当前奖励：
+更合理的贡献表述是：
 
 ```text
-reward =
-  - delay_penalty * avg_delay
-  - drop_penalty * dropped_tasks
-  - queue_penalty * total_queue
-  + 0.2 * completed_tasks
+参考主流 edge/fog 仿真器建模维度，构建一个面向世界模型强化学习的轻量 MEC 卸载环境，并验证 DreamerV3 在 trace-driven SLA offloading 任务中的潜力和局限。
 ```
 
-这适合环境调试，但不适合论文定稿。  
-建议分两步升级。
+这样论文会同时包含：
 
-**第一步：延迟/SLA 导向 reward**
+- 环境构建；
+- 世界模型方法；
+- baseline 对比；
+- SLA 指标；
+- 消融实验；
+- 局限性分析。
+
+## 7. 当前结论
+
+DreamerV3 迁移可行，但不是当前最大风险。当前最大风险是仿真环境不够完整，导致算法结果缺少论文说服力。
+
+下一步应优先实现：
 
 ```text
-r_t =
-  - alpha * avg_completion_delay
-  - beta  * deadline_violation_count
-  - gamma * queue_backlog
-  - eta   * offloading_cost
+多 edge server topology，并保持 single-server 兼容。
 ```
 
-这样可以更明确地说目标是：
-
-- 最小化服务时延，
-- 控制 SLA 违约，
-- 避免系统拥塞。
-
-**第二步：风险感知 reward**
-
-如果后面要做差异化，可以进一步引入：
-
-- tail delay penalty，
-- CVaR 风格风险项，
-- 不确定性大的时候的保守惩罚。
-
-这会自然引向“不确定性感知数字孪生”的技术亮点。
-
-### 6.4 观测编码
-
-这是迁移里最关键的工程点之一。
-
-Dreamer 原始成功场景多见于图像或规整状态，而你们这里是**异构结构化数值观测**。  
-所以真正要改的地方不是 RSSM 本体，而是 encoder / decoder。
-
-建议的最小方案：
-
-1. 用户级特征共享一个 MLP encoder；
-2. 对所有用户 embedding 做 pooling 或拼接；
-3. 与全局特征拼接后送入 RSSM。
-
-更稳妥的第二阶段方案：
-
-- user encoder + global encoder；
-- permutation-invariant aggregation；
-- 或者 transformer/set encoder 来处理可扩展用户集合。
-
-对应地，decoder 也不一定要精确重建每个原始字段，可以采用：
-
-- 重建关键状态统计量，
-- 预测 reward，
-- 预测 continue / done，
-- 预测部分可监督辅助量，如队列变化、下一步 uplink rate。
-
-如果目标是先做迁移验证，使用“结构化 MLP encoder + vector decoder”已经足够。
-
-## 7. 世界模型作为数字孪生的落地方式
-
-如果只说“我们训练一个 Dreamer agent”，故事会显得过窄。  
-如果说“我们学习一个可生成、可滚动、可用于 counterfactual 推演的 MEC 数字孪生”，文章立意会明显更完整。
-
-这个 digital twin 在技术上可落成三个功能：
-
-1. **Forward prediction**  
-   预测给定当前状态和动作后，未来几步的队列、时延和完成情况。
-
-2. **Counterfactual query**  
-   回答“如果这一时刻卸载用户 `i`，而不是用户 `j`，未来会怎样”。
-
-3. **Policy training in imagination**  
-   在 twin 内部做 imagined rollouts，减少真实仿真交互成本。
-
-这三个功能对应三个 reviewer 可理解的价值：
-
-- 可预测，
-- 可解释，
-- 可优化。
-
-这就是“learned generative digital twin”包装真正有力的地方。
-
-## 8. 差异化建议：如何避开 13 号论文
-
-你们不能做成“V2X AoI 的换皮版”。  
-最少要在问题、技术、叙事三层里占两层差异。
-
-### 8.1 问题层差异
-
-优先推荐：
-
-- 从 `AoI minimization` 切到 `MEC offloading`；
-- 从信息新鲜度切到 `delay/SLA/QoS`；
-- 从车联网链路控制切到 `edge service control`。
-
-### 8.2 技术层差异
-
-最值得优先考虑的是：
-
-- **uncertainty-aware world model**；
-- **risk-sensitive offloading**；
-- **counterfactual service analysis**；
-- **transformer/set encoder for heterogeneous edge observations**。
-
-这里面“不确定性感知”最容易和 MEC 痛点对上，因为边缘环境里错误探索和错误预测的代价都更高。
-
-### 8.3 叙事层差异
-
-这层尤其重要。
-
-你们不应该把文章题目和引言写成：
-
-- `Dreamer-based MEC offloading`
-
-而更应该写成类似：
-
-- `Learned Generative Digital Twin for Long-Horizon MEC Service Offloading`
-- `World-Model-Driven Digital Twin for Risk-Aware Edge Service Control`
-
-因为前者是在卖算法，后者是在卖问题理解与系统价值。
-
-## 9. 风险与应对
-
-### 9.1 风险一：环境太简单，世界模型优势不明显
-
-如果环境结构过于简单，PPO/SAC 或启发式就能接近最优，Dreamer 的优势会很难体现。
-
-应对：
-
-- 增强动态性；
-- 加入更明显的 delayed effect；
-- 引入 deadline / priority / stochastic bandwidth；
-- 适度增加 partial observability。
-
-### 9.2 风险二：动作空间不规范，Dreamer 训练不稳
-
-`MultiBinary + cap` 这种动作约束方式实现方便，但学习上会有噪声。
-
-应对：
-
-- 第一阶段只求跑通；
-- 第二阶段加入 action masking 或 top-k structured action。
-
-### 9.3 风险三：reward 设计不够有说服力
-
-如果 reward 只是几个工程系数相加，论文会显得像“调参驱动”。
-
-应对：
-
-- 明确转写成 SLA/QoS 目标；
-- 给出每一项的系统意义；
-- 做 reward ablation。
-
-### 9.4 风险四：digital twin 只停留在口号
-
-如果只是训练世界模型来提回报，而没有展示 twin 的附加功能，digital twin 包装会显得空。
-
-应对：
-
-- 补做多步预测误差实验；
-- 展示 counterfactual case study；
-- 展示 imagination 训练带来的样本效率收益。
-
-## 10. 建议的实验路线
-
-### 阶段 A：迁移可行性验证
-
-目标是先证明 DreamerV3 能在当前最小环境里工作。
-
-建议任务：
-
-- 保持当前单 MEC 环境；
-- 维持离散化的卸载动作；
-- 与 `random / local-only / best-rate / largest-queue / PPO or SAC` 比较；
-- 指标先看平均时延、掉包数、累计奖励、队列长度。
-
-### 阶段 B：论文化增强
-
-目标是把“能跑”升级成“能发”。
-
-建议新增：
-
-- deadline slack；
-- task priority；
-- bandwidth fluctuation；
-- 更清晰的 SLA 违约指标；
-- uncertainty-aware twin 或 risk-aware policy。
-
-### 阶段 C：数字孪生强化
-
-目标是把论文故事从 RL 应用推进到 digital twin。
-
-建议补实验：
-
-- one-step / multi-step dynamics prediction；
-- counterfactual what-if analysis；
-- model-based vs model-free 样本效率对比；
-- out-of-distribution mobility/load pattern 下的适应性测试。
-
-## 11. 对当前项目的具体判断
-
-结合当前代码库，我的判断是：
-
-1. **作为第一阶段 Dreamer 迁移平台，当前项目已经够用。**
-2. **作为最终论文环境，当前项目还不够，需要再补任务语义、风险语义和数字孪生可解释性。**
-3. **最优起步路线仍然是方向 1：世界模型用于 MEC 卸载决策。**
-4. **最值得优先强化的 differentiator 不是“更复杂的网络”，而是“uncertainty-aware learned generative digital twin”。**
-
-## 12. 最终建议
-
-建议按下面顺序推进：
-
-1. 用当前环境先跑通 `DreamerV3 -> MEC offloading`；
-2. 把观测 encoder 改成适合异构数值输入的结构化 encoder；
-3. 把 reward 从调试版改成 SLA/QoS 导向；
-4. 加入不确定性估计或风险感知控制；
-5. 设计 counterfactual twin 展示；
-6. 再把整篇文章统一包装成 `learned generative digital twin for edge services`。
-
-一句话总结：
-
-**13 号论文给你们的，不是一个要照抄的答案，而是一条已经被证明站得住的路线；你们真正该做的，是把这条路线从“vehicular AoI control”改写成“digital-twin-driven MEC service control”。**
+在此基础上，再回到 DreamerV3、PPO、SAC 的正式多 seed 对比。

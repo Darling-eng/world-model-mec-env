@@ -349,7 +349,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rollout-steps", type=int, default=256, help="Steps collected before each PPO update.")
     parser.add_argument("--eval-episodes", type=int, default=5, help="Evaluation episodes after training.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
-    parser.add_argument("--log-dir", type=Path, default=Path("outputs/ppo_mec"), help="Directory for logs and model.")
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path("experiment_records/ppo_mec"),
+        help="Directory for logs and model.",
+    )
     parser.add_argument("--trace", type=Path, default=None, help="Optional normalized task trace CSV.")
     parser.add_argument(
         "--reward-preset",

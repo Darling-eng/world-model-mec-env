@@ -11,7 +11,9 @@ from sim import (
     MECEnv,
     best_uplink_rate_policy,
     largest_queue_policy,
+    least_loaded_edge_policy,
     local_only_policy,
+    nearest_edge_policy,
     random_policy,
 )
 
@@ -25,6 +27,8 @@ POLICY_BUILDERS: dict[str, PolicyBuilder] = {
     "local_only": lambda env: local_only_policy,
     "best_uplink": lambda env: best_uplink_rate_policy,
     "largest_queue": lambda env: largest_queue_policy,
+    "nearest_edge": lambda env: nearest_edge_policy,
+    "least_loaded_edge": lambda env: least_loaded_edge_policy,
 }
 
 METRIC_KEYS = [
@@ -112,6 +116,24 @@ def selected_policy_names(policy_arg: str) -> list[str]:
     return [policy_arg]
 
 
+def parse_float_tuple(value: str | None) -> tuple[float, ...] | None:
+    if value is None or not value.strip():
+        return None
+    return tuple(float(item.strip()) for item in value.split(",") if item.strip())
+
+
+def parse_int_tuple(value: str | None) -> tuple[int, ...] | None:
+    if value is None or not value.strip():
+        return None
+    return tuple(int(float(item.strip())) for item in value.split(",") if item.strip())
+
+
+def parse_str_tuple(value: str | None) -> tuple[str, ...] | None:
+    if value is None or not value.strip():
+        return None
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 def infer_output_format(path: Path, explicit_format: str) -> str:
     if explicit_format != "auto":
         return explicit_format
@@ -151,7 +173,7 @@ def main() -> None:
         "--output",
         type=Path,
         default=None,
-        help="Optional path for aggregate metrics, for example outputs/baselines.csv.",
+        help="Optional path for aggregate metrics, for example experiment_records/baselines.csv.",
     )
     parser.add_argument(
         "--output-format",
@@ -171,10 +193,76 @@ def main() -> None:
         default="debug",
         help="Reward preset. debug preserves old experiments; sla emphasizes completion and deadline safety.",
     )
+    parser.add_argument("--num-edge-servers", type=int, default=1, help="Number of edge/MEC servers.")
+    parser.add_argument(
+        "--edge-server-positions",
+        type=str,
+        default=None,
+        help="Comma-separated server positions, for example 0,50,100.",
+    )
+    parser.add_argument(
+        "--edge-server-compute-rates",
+        type=str,
+        default=None,
+        help="Comma-separated server compute rates, for example 10,14,18.",
+    )
+    parser.add_argument(
+        "--edge-server-coverage-radius",
+        type=float,
+        default=None,
+        help="Optional coverage radius for every edge server.",
+    )
+    parser.add_argument(
+        "--edge-selection-policy",
+        choices=["nearest", "least_loaded"],
+        default="nearest",
+        help="Default target-server selection policy for legacy user-id-only actions.",
+    )
+    parser.add_argument("--task-type-count", type=int, default=1, help="Number of task classes.")
+    parser.add_argument(
+        "--task-type-names",
+        type=str,
+        default=None,
+        help="Comma-separated task class names, for example light,normal,urgent.",
+    )
+    parser.add_argument(
+        "--task-type-probabilities",
+        type=str,
+        default=None,
+        help="Comma-separated task class sampling weights.",
+    )
+    parser.add_argument(
+        "--task-cycles-per-unit-by-type",
+        type=str,
+        default=None,
+        help="Comma-separated cycles-per-unit profile per task class.",
+    )
+    parser.add_argument(
+        "--task-deadlines-by-type",
+        type=str,
+        default=None,
+        help="Comma-separated deadline profile per task class.",
+    )
+    parser.add_argument(
+        "--task-output-ratios-by-type",
+        type=str,
+        default=None,
+        help="Comma-separated output-size/input-size ratios per task class.",
+    )
+    parser.add_argument(
+        "--task-priorities-by-type",
+        type=str,
+        default=None,
+        help="Comma-separated priority values per task class.",
+    )
     args = parser.parse_args()
 
     policy_names = selected_policy_names(args.policy)
-    print(f"episodes={args.episodes} seed={args.seed} policy={args.policy} reward_preset={args.reward_preset}")
+    print(
+        f"episodes={args.episodes} seed={args.seed} policy={args.policy} "
+        f"reward_preset={args.reward_preset} num_edge_servers={args.num_edge_servers} "
+        f"task_type_count={args.task_type_count}"
+    )
     print(
         f"{'policy':<18}"
         f"{'avg_reward':>14}"
@@ -194,6 +282,18 @@ def main() -> None:
                 random_seed=args.seed + index,
                 task_trace_path=str(args.trace) if args.trace is not None else None,
                 reward_preset=args.reward_preset,
+                num_edge_servers=args.num_edge_servers,
+                edge_server_positions=parse_float_tuple(args.edge_server_positions),
+                edge_server_compute_rates=parse_float_tuple(args.edge_server_compute_rates),
+                edge_server_coverage_radius=args.edge_server_coverage_radius,
+                edge_selection_policy=args.edge_selection_policy,
+                task_type_count=args.task_type_count,
+                task_type_names=parse_str_tuple(args.task_type_names),
+                task_type_probabilities=parse_float_tuple(args.task_type_probabilities),
+                task_cycles_per_unit_by_type=parse_float_tuple(args.task_cycles_per_unit_by_type),
+                task_deadlines_by_type=parse_int_tuple(args.task_deadlines_by_type),
+                task_output_ratios_by_type=parse_float_tuple(args.task_output_ratios_by_type),
+                task_priorities_by_type=parse_float_tuple(args.task_priorities_by_type),
             )
         )
         policy = policy_builder(env)

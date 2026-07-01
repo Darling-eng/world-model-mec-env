@@ -14,7 +14,9 @@ venv/
 env/
 
 # Experiment outputs
+experiment_records/
 outputs/
+csv/*.csv
 *_codex.csv
 ppo_*_codex/
 *.npz

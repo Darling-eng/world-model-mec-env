@@ -1,139 +1,186 @@
-# Implementation Log（实现日志）
+# 实现日志
 
-Date（日期）：2026-06-07  
-Project（项目）：MEC（移动边缘计算）+ DreamerV3（世界模型强化学习算法）
+日期：2026-06-07 起  
+项目：MEC 仿真环境 + DreamerV3 / PPO / SAC 实验入口
 
-这份日志用于后期复盘，按改动批次记录本次实现中做了什么、为什么做，以及如何验证。
+## 目标
 
-## 1. Baseline Evaluation（基线评测）能力增强
+本日志记录当前 Python MEC 仿真器从早期 demo 到可运行强化学习实验环境的主要实现过程。它不是最终论文材料，而是开发过程的技术记录。
 
-### 改动内容
+## 已完成的核心模块
 
-- 修改 `eval_baselines.py`。
-- 新增 `--policy` 参数，可以单独运行某一条 heuristic baseline（启发式基线）：
-  - `random`（随机策略）
-  - `local_only`（本地执行）
-  - `best_uplink`（最佳上行链路）
-  - `largest_queue`（最长队列）
-- 保留原有默认行为：不传 `--policy` 时，仍然一次运行全部四条 baseline（基线）。
-- 统一输出 metrics（指标）字段：
-  - `total_reward`（总奖励）
-  - `completed_tasks`（完成任务数）
-  - `dropped_tasks`（丢弃任务数）
-  - `avg_delay`（平均时延）
-  - `avg_total_queue`（平均总队列长度）
-  - `steps`（步数）
-- 新增 `--output` 参数，用于保存 aggregate results（聚合结果）。
-- 新增 `--output-format` 参数，支持 `csv`（逗号分隔表格）和 `jsonl`（逐行 JSON）。
+### 1. 基础 MEC 仿真器
 
-### 改动原因
+已实现：
 
-之前 baseline（基线）只能一次性全部运行，不方便逐条调试和复盘。  
-同时，终端输出不利于后续画图、写 report（报告）或和 DreamerV3（世界模型强化学习算法）结果放在同一张表里比较。
+- 多用户移动；
+- 任务随机到达；
+- 本地计算；
+- 上行传输；
+- MEC 服务器队列；
+- 截止期任务丢弃；
+- 基于 delay、drop、queue、completion 的奖励；
+- 启发式基线策略。
 
-### 验证记录
+核心文件：
 
-已运行：
+- `sim/config.py`
+- `sim/entities.py`
+- `sim/env.py`
+- `sim/policies.py`
+- `eval_baselines.py`
 
-```powershell
-python eval_baselines.py --episodes 2 --seed 7
-python eval_baselines.py --policy best_uplink --episodes 2 --seed 7 --output outputs\baseline_best_uplink_smoke.csv
-python eval_baselines.py --policy local_only --episodes 2 --seed 7 --output outputs\baseline_local_only_smoke.jsonl
-python eval_baselines.py --episodes 10 --seed 7 --output outputs\baselines_episodes10_seed7.csv
-python eval_baselines.py --episodes 50 --seed 7 --output outputs\baselines_episodes50_seed7.csv
+### 2. 启发式基线评估
+
+支持的策略：
+
+- `random`
+- `local_only`
+- `best_uplink`
+- `largest_queue`
+
+典型命令：
+
+```bash
+python eval_baselines.py --episodes 50 --seed 7 --output experiment_records/baselines/baselines.csv
 ```
 
-结果：全部 baseline（基线）评测、单条 baseline（基线）评测、CSV（逗号分隔表格）输出、JSONL（逐行 JSON）输出均已跑通。
+早期结果表明，不同奖励和负载设置会显著改变启发式策略排序。因此，后续实验必须固定 trace、reward、seed 和 evaluation episodes。
 
-## 2. PPO Baseline（近端策略优化基线）入口
+### 3. Gymnasium 封装
 
-### 改动内容
+已添加 Gymnasium 兼容环境，用于接入常见强化学习库：
 
-- 新增 `scripts/run_ppo_mec.py`。
-- 实现一个 lightweight PPO（轻量近端策略优化）训练脚本。
-- 使用 NumPy（数值计算库）实现，不依赖 torch（深度学习库）或 stable-baselines3（常用强化学习库）。
-- 使用 `GymnasiumMECEnv` 的 `box` action mode（连续动作模式）。
-- 支持短程训练、evaluation（评估）、metrics logging（指标日志）。
-- 训练输出包括：
-  - `metrics.jsonl`（指标日志）
-  - `ppo_linear_model.npz`（轻量模型参数）
+- 连续 box action；
+- binary action；
+- 与原始 `MECEnv` 保持兼容；
+- 支持 trace 和 SLA reward。
 
-### 改动原因
+核心文件：
 
-本地 `mec-wm` Python environment（Python 环境）里有 `gymnasium`（强化学习环境接口）和 `numpy`（数值计算库），但没有 `torch`（深度学习库）和 `stable-baselines3`（常用强化学习库）。  
-所以本次没有直接接入重型 DRL library（深度强化学习库），而是先做一个 dependency-free PPO smoke baseline（无额外依赖的 PPO 冒烟基线），用于验证训练闭环。
+- `sim/gym_wrapper.py`
+- `sim/gym_registration.py`
 
-### 验证记录
+### 4. 轻量级 PPO
 
-已运行：
+已实现一个 NumPy 版本的轻量级 PPO：
 
-```powershell
-python scripts\run_ppo_mec.py --steps 64 --rollout-steps 32 --eval-episodes 1 --seed 7 --log-dir outputs\ppo_smoke
+- 主要用于本地 smoke test；
+- 可以验证 observation、action、reward、metrics 和日志路径是否贯通；
+- 不应作为论文级深度强化学习 PPO baseline。
+
+核心文件：
+
+- `scripts/run_ppo_mec.py`
+
+### 5. Stable-Baselines3 SAC 和 PPO 入口
+
+已新增正式 model-free baseline 入口：
+
+- `scripts/run_sac_mec.py`
+- `scripts/run_sb3_ppo_mec.py`
+
+这两个脚本依赖 `stable-baselines3` 和 `torch`。当前本地 `mec-wm` 环境未安装这些依赖，因此正式训练建议在 Colab 或 GPU 环境运行。
+
+### 6. DreamerV3 接入
+
+已添加 DreamerV3 启动入口：
+
+- `scripts/run_dreamer_mec.py`
+- `sim/dreamer_wrapper.py`
+
+关键改动：
+
+- 支持 `--trace`；
+- 支持 `--reward-preset`；
+- 使用环境变量向 DreamerV3 注册环境传递 MEC 设置。
+
+### 7. trace-driven workload
+
+已支持从 CSV trace 生成任务：
+
+- `sim/trace.py`
+- `scripts/extract_sql_trace.py`
+
+当前保留的 trace 文件：
+
+```text
+csv/trace_alibaba_sample_codex.csv
 ```
 
-结果：PPO（近端策略优化）完成 64 steps（64 步）短程训练，成功生成 `outputs\ppo_smoke\metrics.jsonl`，并完成 1 episode（1 个回合）evaluation（评估）。
+### 8. 实验结果聚合
 
-## 3. Method Design（方法设计）文档
+已新增结果聚合器：
 
-### 改动内容
+```text
+scripts/aggregate_experiment_results.py
+```
 
-- 新增 `docs/next_stage_method_design.md`。
-- 整理下一阶段可写进 report（报告）的方法强化方向：
-  - uncertainty-aware offloading（不确定性感知卸载）
-  - structured encoder（结构化编码器）/ Transformer encoder（Transformer 编码器）
-  - generative digital twin（生成式数字孪生）
+支持：
 
-### 改动原因
+- 读取 CSV；
+- 读取 JSONL；
+- 统一输出 raw comparison table；
+- 输出 mean/std summary table。
 
-report（报告）里已经明确指出，后续不能只是把 DreamerV3（世界模型强化学习算法）套到 MEC（移动边缘计算）上，还要想清楚 differentiation（差异化）。  
-这份文档用于把下一阶段可讲的技术路线提前整理成文字，方便后续直接合入周报或论文草稿。
+典型命令：
 
-### 验证记录
+```bash
+python scripts/aggregate_experiment_results.py \
+  --inputs "csv/trace_baselines_sla_e50_seed*_codex.csv" \
+  --output experiment_records/summaries/comparison.csv \
+  --summary-output experiment_records/summaries/comparison_summary.csv
+```
 
-已人工检查文档内容，确认它对应 report（报告）中的三条方法强化方向。
+### 9. Colab 结果归档
 
-## 4. Scripts Documentation（脚本说明）更新
+已新增：
 
-### 改动内容
+```text
+scripts/archive_colab_results.py
+```
 
-- 修改 `scripts/README.md`。
-- 新增 heuristic baseline（启发式基线）运行命令。
-- 新增单条 baseline（基线）运行命令。
-- 新增保存 aggregate metrics（聚合指标）的命令。
-- 新增 lightweight PPO（轻量近端策略优化）训练命令。
-- 保留 DreamerV3（世界模型强化学习算法）Colab（云端笔记本）运行说明。
+用途：
 
-### 改动原因
+- 把 Colab 临时目录中的 `metrics.jsonl`、`scores.jsonl`、CSV 文件复制到持久目录；
+- 生成 `manifest.json`；
+- 保留原始实验证据链。
 
-你的下周任务需要自己在终端反复跑实验。把命令写进 README（说明文档）后，不需要每次翻聊天记录。
+## 目录整理
 
-### 验证记录
+旧的 `outputs/`、根目录 PPO smoke 输出和临时 CSV 已清理。后续统一使用：
 
-README（说明文档）中的 baseline（基线）命令已经按对应脚本验证过；PPO（近端策略优化）命令已用短程参数验证过。
+```text
+experiment_records/
+```
 
-## 5. Experiment Outputs（实验输出）忽略规则
+保留的历史 smoke 结果移动到：
 
-### 改动内容
+```text
+experiment_records/legacy/
+```
 
-- 修改 `.gitignore`。
-- 新增 `outputs/` 忽略规则。
+## 当前技术判断
 
-### 改动原因
+当前代码已经足以支持：
 
-baseline（基线）结果、PPO（近端策略优化）日志和模型参数都属于 experiment outputs（实验输出），不应该默认进入 git（版本管理）记录。
+- 环境 smoke test；
+- trace/SLA baseline；
+- PPO/SAC/DreamerV3 接口验证；
+- 结果聚合；
+- 原始结果归档。
 
-### 验证记录
+但如果要支撑论文级结果，仿真器本身还需要增强，尤其是：
 
-已确认 `outputs/` 中生成的 CSV（逗号分隔表格）、JSONL（逐行 JSON）和 NPZ（NumPy 参数文件）不会出现在 `git status`（版本状态）中。
+- 多 edge server；
+- cloud tier；
+- 任务类型；
+- 网络竞争；
+- 异构服务器；
+- utilization、network usage、energy 等指标。
 
-## 6. 当前阶段结论
+详细分析见：
 
-- 实验平台已经从“能跑”推进到“能记录、能单独评测、能保存结果”。
-- heuristic baseline（启发式基线）已经具备正式复现实验的入口。
-- PPO（近端策略优化）已经具备短程训练闭环，但当前版本是 lightweight smoke baseline（轻量冒烟基线），不是最终高性能 DRL baseline（深度强化学习基线）。
-- 当前 50 episodes（50 个回合）结果仍显示 `local_only`（本地执行）在 reward（奖励）上最好，但 `best_uplink`（最佳上行链路）完成任务更多、丢弃任务更少，说明后续 reward redesign（奖励重设计）仍然必要。
-
-## 7. 注意事项
-
-- 两个旧 docs（文档）文件在本次实现前已经处于 deleted（删除）状态，本次没有恢复，也没有继续修改。
-- DreamerV3（世界模型强化学习算法）主框架没有被改动，本次只强化本地 MEC environment（移动边缘计算环境）、baseline evaluation（基线评测）和实验记录能力。
+```text
+docs/simulator_completeness_gap_audit.md
+```

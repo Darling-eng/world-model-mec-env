@@ -1,29 +1,137 @@
-# 下一阶段方法设计：World Model（世界模型）用于 MEC（移动边缘计算）卸载
+# 下一阶段方法设计
 
-当前阶段已经完成 MEC simulator（移动边缘计算仿真器）、heuristic baseline（启发式基线）和 DreamerV3（世界模型强化学习算法）接入验证。下一阶段的方法强化不应该只追求“把算法跑得更久”，而是要围绕 MEC（移动边缘计算）场景本身提炼出区别于 13 号论文的贡献点。
+主题：基于世界模型的 MEC 卸载决策  
+当前阶段：环境可信度补强优先于算法调参
 
-## 1. Uncertainty-Aware Offloading（不确定性感知卸载）
+## 当前判断
 
-MEC（移动边缘计算）卸载的关键风险在于：当前观测到的 channel state（信道状态）、server load（服务器负载）和 task queue（任务队列）并不一定能准确代表未来状态。World model（世界模型）可以通过 latent dynamics（隐空间动态）预测未来多步状态，因此可以进一步估计 predictive uncertainty（预测不确定性）。
+项目已经完成了早期 pipeline：
 
-后续可以把 uncertainty（不确定性）用于 risk-aware decision（风险感知决策）：当模型对未来链路或队列预测不确定时，策略不只优化平均 reward（奖励），还要避免高风险 offloading（卸载）动作。例如，对于 deadline-sensitive task（截止期敏感任务），如果 world model（世界模型）预测边缘执行收益高但不确定性也高，策略可以倾向于更保守的 local execution（本地执行）或选择链路更稳定的用户。
+- Python MEC 仿真器；
+- trace-driven workload；
+- SLA reward；
+- 启发式 baseline；
+- PPO/SAC/DreamerV3 接入；
+- 结果聚合和归档。
 
-## 2. Structured Encoder（结构化编码器）/ Transformer Encoder（Transformer 编码器）
+但是，当前环境仍偏简化。如果直接继续训练 DreamerV3、SAC 或 PPO，结果可能只能说明算法能在 toy simulator 上运行，不能充分支撑论文级 MEC offloading 结论。
 
-当前 observation（观测）已经被压平成固定长度向量，这适合快速接入 DreamerV3（世界模型强化学习算法），但它会弱化 MEC（移动边缘计算）状态里的结构信息。实际上，每个 user（用户）都有一组局部特征，例如 position（位置）、velocity（速度）、queue length（队列长度）、task size（任务大小）和 uplink rate（上行链路速率）；server（服务器）也有独立的全局状态。
+因此下一阶段方法设计必须遵循：
 
-下一步可以把 encoder（编码器）从简单 flat vector encoder（平铺向量编码器）升级为 user-wise structured encoder（按用户结构化编码器）：先对每个 user（用户）的局部状态共享编码，再和 global state（全局状态）融合。如果继续增强，可以引入 attention（注意力机制）或 Transformer encoder（Transformer 编码器），让模型自动学习不同 user（用户）之间的竞争关系、队列耦合和链路差异。
+```text
+先补仿真环境，再做算法创新。
+```
 
-## 3. Generative Digital Twin（生成式数字孪生）
+## 研究主线
 
-World model（世界模型）在本文方向中不只是 RL（强化学习）里的辅助模块，更适合包装成 learned generative digital twin（学习得到的生成式数字孪生）。它的价值在于能够回答 what-if analysis（反事实分析）问题：如果当前把某个 task（任务）卸载到 MEC server（边缘服务器），未来几步的 queue congestion（队列拥塞）、delay（时延）和 dropped tasks（丢弃任务）会如何变化。
+目标问题：
 
-这个 framing（叙事框架）可以把方法从“使用 DreamerV3（世界模型强化学习算法）训练策略”提升为“构建可预测、可想象、可规划的 MEC digital twin（移动边缘计算数字孪生）”。对 TSC/TMC（服务计算/移动计算期刊）来说，这比单纯套用 world model（世界模型）更容易体现服务计算场景价值。
+```text
+在 trace-driven MEC 场景中，世界模型强化学习能否学习到更稳定的 SLA-aware offloading 策略？
+```
 
-## 阶段性落点
+要让这个问题成立，环境至少应包含：
 
-短期内建议先不同时展开三条创新线，而是按照实验成熟度推进：
+- 多 edge server；
+- 用户与 edge server 的动态关联；
+- 异构服务器资源；
+- 任务类型和 deadline；
+- 网络竞争；
+- SLA 指标；
+- 可复现实验配置。
 
-1. 先把 metrics（指标）和 baseline（基线）补齐，保证实验闭环可复现。
-2. 再通过 PPO（近端策略优化）和 DreamerV3（世界模型强化学习算法）建立正式 RL comparison（强化学习对比）。
-3. 最后优先选择 uncertainty-aware offloading（不确定性感知卸载）作为第一条方法创新线，因为它和 MEC（移动边缘计算）的 SLA（服务等级协议）、deadline（截止期）和 risk-aware decision（风险感知决策）联系最直接。
+## 方法创新候选
+
+### 1. 不确定性感知卸载
+
+世界模型可以预测未来队列、延迟或任务违约风险。策略不应只看期望 reward，还应考虑预测不确定性。
+
+可能做法：
+
+- 用模型预测误差估计风险；
+- 对高不确定性 action 加惩罚；
+- 在 deadline 敏感任务上更保守；
+- 将不确定性作为 observation 的额外输入。
+
+适用条件：
+
+- DreamerV3 在基础环境中能稳定训练；
+- 已有多 seed 对比表；
+- 可以计算或近似 world model prediction error。
+
+### 2. 异构数值编码器
+
+当前 observation 是扁平向量，混合了用户、任务、链路和服务器特征。这不利于世界模型学习结构化关系。
+
+可能做法：
+
+- 用户特征单独编码；
+- 任务特征单独编码；
+- 链路特征单独编码；
+- 服务器特征单独编码；
+- 最后融合为策略和世界模型输入。
+
+适用条件：
+
+- 多 edge server topology 已实现；
+- observation 已包含 server-level 和 link-level 特征。
+
+### 3. 生成式数字孪生表述
+
+DreamerV3 可以被解释为学习一个 MEC 环境的生成式动态模型，用于在 latent imagination 中评估卸载策略。
+
+论文表述可以是：
+
+```text
+构建面向 MEC offloading 的轻量级生成式数字孪生，使策略能够在预测的未来队列和 SLA 风险中优化卸载决策。
+```
+
+注意：这个表述必须有实验支撑，不能只作为概念包装。
+
+## 实验路线
+
+### 阶段一：环境补强
+
+优先实现：
+
+1. 多 edge server；
+2. server heterogeneity；
+3. 任务类型；
+4. 网络竞争；
+5. 更完整的 metrics。
+
+### 阶段二：基线重跑
+
+固定：
+
+- trace；
+- reward；
+- seed；
+- evaluation episodes；
+- scenario config；
+- output schema。
+
+对比：
+
+- heuristic；
+- SB3 PPO；
+- SAC；
+- DreamerV3。
+
+### 阶段三：方法增强
+
+根据结果选择：
+
+- 如果 DreamerV3 明显弱于 SAC：优先做 observation encoder；
+- 如果 DreamerV3 reward 好但 deadline 差：优先做 uncertainty-aware offloading；
+- 如果 heuristic 仍然最强：检查动作空间和 reward 是否仍然限制学习。
+
+## 当前下一步
+
+下一步不是写新算法，而是实现：
+
+```text
+多 edge server topology，并保持 single-server 兼容。
+```
+
+这是后续所有方法创新的地基。
