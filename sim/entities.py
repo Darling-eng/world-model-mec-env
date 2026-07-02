@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 @dataclass
 class Task:
     task_id: int
+    user_id: int | None
     size: float
     total_cycles: float
     remaining_cycles: float
@@ -19,6 +20,10 @@ class Task:
     edge_server_id: int | None = None
     uploaded: bool = False
     remaining_upload: float = 0.0
+    downloaded: bool = False
+    remaining_download: float = 0.0
+    assigned_to_cloud: bool = False
+    cloud_delay_remaining: int = 0
 
 
 @dataclass
@@ -36,3 +41,11 @@ class MECServer:
     compute_rate: float = 14.0
     coverage_radius: float | None = None
     queue: list[Task] = field(default_factory=list)
+    downlink_queue: list[Task] = field(default_factory=list)
+
+
+@dataclass
+class CloudServer:
+    compute_rate: float = 40.0
+    queue: list[Task] = field(default_factory=list)
+    downlink_queue: list[Task] = field(default_factory=list)

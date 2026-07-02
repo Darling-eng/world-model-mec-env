@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-from .config import MECConfig
 from .env import MECEnv
 from .gym_wrapper import GymnasiumMECEnv
+from .runtime import build_runtime_config_from_env
 
 try:
     import gymnasium as gym
@@ -36,12 +36,14 @@ def _to_legacy_space(space):
 
 
 def _resolve_runtime_config(
+    scenario: str | None,
     trace_path: str | None,
     reward_preset: str | None,
-) -> tuple[str | None, str]:
+) -> tuple[str | None, str | None, str]:
+    scenario = scenario if scenario is not None else os.environ.get("MEC_SCENARIO")
     trace_path = trace_path if trace_path is not None else os.environ.get("MEC_TRACE_PATH")
     reward_preset = reward_preset or os.environ.get("MEC_REWARD_PRESET", "debug")
-    return trace_path, reward_preset
+    return scenario, trace_path, reward_preset
 
 
 class DreamerMECEnv(gym.Env if gym is not None else object):
@@ -58,15 +60,16 @@ class DreamerMECEnv(gym.Env if gym is not None else object):
     def __init__(
         self,
         action_mode: str = "box",
+        scenario: str | None = None,
         trace_path: str | None = None,
         reward_preset: str | None = None,
     ):
         if gym is None:
             raise ImportError("DreamerMECEnv requires gymnasium to be installed.")
         super().__init__()
-        trace_path, reward_preset = _resolve_runtime_config(trace_path, reward_preset)
+        scenario, trace_path, reward_preset = _resolve_runtime_config(scenario, trace_path, reward_preset)
         self.env = GymnasiumMECEnv(
-            MECEnv(MECConfig(task_trace_path=trace_path, reward_preset=reward_preset)),
+            MECEnv(build_runtime_config_from_env(scenario=scenario, trace_path=trace_path, reward_preset=reward_preset)),
             action_mode=action_mode,
         )
         self.observation_space = self.env.observation_space
@@ -97,15 +100,16 @@ class LegacyDreamerMECEnv(legacy_gym.Env if legacy_gym is not None else object):
     def __init__(
         self,
         action_mode: str = "box",
+        scenario: str | None = None,
         trace_path: str | None = None,
         reward_preset: str | None = None,
     ):
         if legacy_gym is None:
             raise ImportError("LegacyDreamerMECEnv requires gym to be installed.")
         super().__init__()
-        trace_path, reward_preset = _resolve_runtime_config(trace_path, reward_preset)
+        scenario, trace_path, reward_preset = _resolve_runtime_config(scenario, trace_path, reward_preset)
         self.env = GymnasiumMECEnv(
-            MECEnv(MECConfig(task_trace_path=trace_path, reward_preset=reward_preset)),
+            MECEnv(build_runtime_config_from_env(scenario=scenario, trace_path=trace_path, reward_preset=reward_preset)),
             action_mode=action_mode,
         )
         self.observation_space = _to_legacy_space(self.env.observation_space)

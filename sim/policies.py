@@ -74,6 +74,24 @@ def least_loaded_edge_policy(obs: dict) -> list[tuple[int, int]]:
     return chosen
 
 
+def cloud_edge_policy(obs: dict) -> list[tuple[int, int]]:
+    users = sorted(
+        obs["users"],
+        key=lambda item: (item["queue_length"], item["current_task_remaining_cycles"]),
+        reverse=True,
+    )
+    chosen: list[tuple[int, int]] = []
+    cloud_enabled = bool((obs.get("cloud") or {}).get("enabled", False))
+    for user in users:
+        if user["queue_length"] <= 0:
+            continue
+        server_id = -1 if cloud_enabled else _least_loaded_reachable_server(obs, user)
+        chosen.append((user["user_id"], server_id))
+        if len(chosen) >= obs["max_offloads_per_step"]:
+            break
+    return chosen
+
+
 def _nearest_reachable_server(obs: dict, user: dict) -> int:
     servers = obs.get("servers") or [{"server_id": 0, "position": 0.0, "queue_length": 0}]
     reachable_ids = _reachable_server_ids(user)

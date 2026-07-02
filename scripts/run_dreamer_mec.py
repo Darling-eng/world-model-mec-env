@@ -22,6 +22,11 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         help="Optional CSV trace path for trace-driven MEC task arrivals.",
     )
     parser.add_argument(
+        "--scenario",
+        default=None,
+        help="Optional named MEC scenario, for example multi_edge_network_sla or cloud_edge_sla.",
+    )
+    parser.add_argument(
         "--reward-preset",
         choices=["debug", "sla"],
         default="debug",
@@ -44,6 +49,8 @@ def main() -> None:
         if not trace_path.exists():
             raise FileNotFoundError(f"MEC trace file not found: {trace_path}")
         os.environ["MEC_TRACE_PATH"] = str(trace_path)
+    if args.scenario is not None:
+        os.environ["MEC_SCENARIO"] = args.scenario
     os.environ["MEC_REWARD_PRESET"] = args.reward_preset
 
     sys.path.insert(0, str(repo_root))
@@ -52,6 +59,7 @@ def main() -> None:
     register_dreamer_envs()
     print(
         "MEC Dreamer config: "
+        f"scenario={os.environ.get('MEC_SCENARIO', '<custom>')} "
         f"trace={os.environ.get('MEC_TRACE_PATH', '<synthetic>')} "
         f"reward_preset={os.environ['MEC_REWARD_PRESET']}"
     )

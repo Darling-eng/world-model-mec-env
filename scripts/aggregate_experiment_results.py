@@ -16,6 +16,25 @@ METRIC_KEYS = [
     "deadline_violation_rate",
     "avg_delay",
     "avg_total_queue",
+    "avg_edge_utilization",
+    "avg_uplink_data",
+    "avg_downlink_data",
+    "avg_network_data",
+    "avg_cloud_utilization",
+    "avg_cloud_usage_ratio",
+    "avg_energy_used",
+    "avg_cloud_cost",
+]
+
+CONFIG_KEYS = [
+    "scenario",
+    "reward_preset",
+    "num_edge_servers",
+    "edge_selection_policy",
+    "task_type_count",
+    "enable_uplink_contention",
+    "enable_downlink_transmission",
+    "enable_cloud_fallback",
 ]
 
 
@@ -80,6 +99,8 @@ def normalize_row(path: Path, row: dict, *, phase: str = "eval") -> dict:
         "episodes": str(row.get("episodes") or ""),
         "seed": str(row.get("seed") or ""),
     }
+    for key in CONFIG_KEYS:
+        output[key] = str(row.get(key) or "")
     for key in METRIC_KEYS:
         output[key] = normalize_number(row.get(key))
     return output
@@ -103,7 +124,7 @@ def load_result_rows(path: Path) -> list[dict]:
 
 def write_csv(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["algorithm", "phase", "episodes", "seed", *METRIC_KEYS, "source_file"]
+    fieldnames = ["algorithm", "phase", "episodes", "seed", *CONFIG_KEYS, *METRIC_KEYS, "source_file"]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -133,15 +154,20 @@ def sample_std(values: list[float]) -> float:
 
 
 def summarize_rows(rows: list[dict]) -> list[dict]:
-    groups: dict[tuple[str, str], list[dict]] = {}
+    groups: dict[tuple[str, str, str], list[dict]] = {}
     for row in rows:
-        key = (str(row.get("algorithm", "")), str(row.get("phase", "")))
+        key = (
+            str(row.get("scenario", "")),
+            str(row.get("algorithm", "")),
+            str(row.get("phase", "")),
+        )
         groups.setdefault(key, []).append(row)
 
     summary_rows = []
-    for (algorithm, phase), group_rows in sorted(groups.items()):
+    for (scenario, algorithm, phase), group_rows in sorted(groups.items()):
         seeds = sorted({str(row.get("seed", "")) for row in group_rows if str(row.get("seed", ""))})
         output = {
+            "scenario": scenario,
             "algorithm": algorithm,
             "phase": phase,
             "runs": str(len(group_rows)),
@@ -158,7 +184,7 @@ def summarize_rows(rows: list[dict]) -> list[dict]:
 def write_summary_csv(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     metric_fields = [field for key in METRIC_KEYS for field in (f"{key}_mean", f"{key}_std")]
-    fieldnames = ["algorithm", "phase", "runs", "seeds", *metric_fields]
+    fieldnames = ["scenario", "algorithm", "phase", "runs", "seeds", *metric_fields]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

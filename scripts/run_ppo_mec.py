@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from sim import GymnasiumMECEnv, MECConfig, MECEnv
+from sim import GymnasiumMECEnv, MECEnv, SCENARIO_NAMES, build_runtime_config
 
 
 @dataclass
@@ -273,10 +273,17 @@ def compute_gae(
     return advantages, returns
 
 
-def make_env(trace_path: Path | None = None, reward_preset: str = "debug") -> GymnasiumMECEnv:
-    config = MECConfig(
-        task_trace_path=str(trace_path) if trace_path is not None else None,
+def make_env(
+    trace_path: Path | None = None,
+    reward_preset: str = "debug",
+    scenario: str | None = None,
+    seed: int | None = None,
+) -> GymnasiumMECEnv:
+    config = build_runtime_config(
+        scenario=scenario,
+        trace_path=trace_path,
         reward_preset=reward_preset,
+        seed=seed,
     )
     return GymnasiumMECEnv(MECEnv(config), action_mode="box")
 
@@ -287,8 +294,9 @@ def evaluate(
     seed: int,
     trace_path: Path | None = None,
     reward_preset: str = "debug",
+    scenario: str | None = None,
 ) -> dict[str, float]:
-    env = make_env(trace_path, reward_preset)
+    env = make_env(trace_path, reward_preset, scenario, seed)
     results = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
@@ -298,6 +306,12 @@ def evaluate(
         deadline_violations = 0
         total_delay = 0.0
         total_queue = 0.0
+        total_edge_utilization = 0.0
+        total_network_data = 0.0
+        total_cloud_utilization = 0.0
+        total_cloud_usage_ratio = 0.0
+        total_energy_used = 0.0
+        total_cloud_cost = 0.0
         steps = 0
         while True:
             action = agent.deterministic_action(obs)
@@ -308,6 +322,12 @@ def evaluate(
             deadline_violations += int(info.get("deadline_violations", info["dropped_tasks"]))
             total_delay += float(info["avg_delay"])
             total_queue += float(info["total_queue"])
+            total_edge_utilization += float(info.get("avg_edge_utilization", 0.0))
+            total_network_data += float(info.get("network_data", 0.0))
+            total_cloud_utilization += float(info.get("cloud_utilization", 0.0))
+            total_cloud_usage_ratio += float(info.get("cloud_usage_ratio", 0.0))
+            total_energy_used += float(info.get("energy_used", 0.0))
+            total_cloud_cost += float(info.get("cloud_cost", 0.0))
             steps += 1
             if terminated or truncated:
                 break
@@ -320,6 +340,12 @@ def evaluate(
                 "deadline_violation_rate": deadline_violations / max(completed + deadline_violations, 1),
                 "avg_delay": total_delay / max(steps, 1),
                 "avg_total_queue": total_queue / max(steps, 1),
+                "avg_edge_utilization": total_edge_utilization / max(steps, 1),
+                "avg_network_data": total_network_data / max(steps, 1),
+                "avg_cloud_utilization": total_cloud_utilization / max(steps, 1),
+                "avg_cloud_usage_ratio": total_cloud_usage_ratio / max(steps, 1),
+                "avg_energy_used": total_energy_used / max(steps, 1),
+                "avg_cloud_cost": total_cloud_cost / max(steps, 1),
             }
         )
     env.close()
@@ -333,6 +359,12 @@ def evaluate(
             "deadline_violation_rate",
             "avg_delay",
             "avg_total_queue",
+            "avg_edge_utilization",
+            "avg_network_data",
+            "avg_cloud_utilization",
+            "avg_cloud_usage_ratio",
+            "avg_energy_used",
+            "avg_cloud_cost",
         ]
     }
 
@@ -356,6 +388,7 @@ def parse_args() -> argparse.Namespace:
         help="Directory for logs and model.",
     )
     parser.add_argument("--trace", type=Path, default=None, help="Optional normalized task trace CSV.")
+    parser.add_argument("--scenario", choices=SCENARIO_NAMES, default=None, help="Optional named MEC scenario.")
     parser.add_argument(
         "--reward-preset",
         choices=["debug", "sla"],
@@ -372,7 +405,7 @@ def main() -> None:
         rollout_steps=args.rollout_steps,
         seed=args.seed,
     )
-    env = make_env(args.trace, args.reward_preset)
+    env = make_env(args.trace, args.reward_preset, args.scenario, args.seed)
     obs_dim = int(env.observation_space.shape[0])
     action_dim = int(env.action_space.shape[0])
     agent = LinearPPOAgent(obs_dim, action_dim, config)
@@ -411,8 +444,16 @@ def main() -> None:
         seed=config.seed + 1_000_000,
         trace_path=args.trace,
         reward_preset=args.reward_preset,
+        scenario=args.scenario,
     )
-    eval_row = {"phase": "eval", "episodes": args.eval_episodes, **eval_metrics}
+    eval_row = {
+        "algorithm": "ppo_linear",
+        "phase": "eval",
+        "episodes": args.eval_episodes,
+        "seed": args.seed,
+        "scenario": args.scenario or "custom",
+        **eval_metrics,
+    }
     append_jsonl(metrics_path, eval_row)
     agent.save(args.log_dir / "ppo_linear_model.npz")
     env.close()

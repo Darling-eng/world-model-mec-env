@@ -7,8 +7,13 @@
 - 多个移动用户在一维区域内移动；
 - 一个或多个 edge/MEC 服务器；
 - 随机任务到达或 trace 驱动任务到达；
+- 异构任务类型、输出数据大小、截止期画像和优先级；
 - 每个时间步选择部分用户进行任务卸载；
-- 本地计算、上行传输、MEC 队列和 MEC 执行；
+- 本地计算、上行传输、MEC 队列、MEC 执行，以及可选下行响应传输；
+- 可选的同一 edge server 下共享上行带宽竞争；
+- 可选的 cloud fallback，支持 local / edge / cloud 三类执行位置；
+- edge 计算利用率、上行/下行网络使用量等实验指标；
+- 轻量能耗和 cloud 成本指标；
 - 基于延迟、丢弃任务、队列长度和完成任务数的奖励；
 - SLA 奖励模式和截止期违约率等指标；
 - Gymnasium wrapper 和 DreamerV3 环境桥接。
@@ -21,6 +26,7 @@
 - `sim/vector.py`：观测向量展开和动作向量转换；
 - `sim/policies.py`：启发式基线策略；
 - `sim/rollout.py`：采集强化学习或世界模型训练数据；
+- `sim/scenarios.py`：命名实验场景模板；
 - `sim/gym_wrapper.py`：Gymnasium 兼容封装；
 - `sim/dreamer_wrapper.py`：DreamerV3 兼容封装；
 - `eval_baselines.py`：启发式基线评估入口；
@@ -62,6 +68,27 @@ python eval_baselines.py \
   --output experiment_records/baselines/trace_sla_seed7.csv
 ```
 
+使用命名场景模板：
+
+```bash
+python eval_baselines.py \
+  --scenario multi_edge_network_sla \
+  --episodes 20 \
+  --seed 7 \
+  --policy all \
+  --output experiment_records/baselines/multi_edge_network_sla_seed7.csv
+```
+
+当前内置场景包括：
+
+- `simple_single_edge`：单 edge server + SLA 奖励，用于兼容性对照；
+- `multi_edge_sla`：三 edge server + SLA 奖励；
+- `multi_edge_heterogeneous_sla`：三 edge server + 异构任务画像；
+- `multi_edge_network_sla`：三 edge server + 异构任务 + 上行竞争 + 下行响应传输。
+- `cloud_edge_sla`：三 edge server + 异构任务 + 严格网络模型 + cloud fallback。
+
+显式命令行参数会覆盖场景模板中的同名配置，便于在固定场景上做小范围消融。
+
 ## 环境逻辑
 
 每个仿真步执行以下流程：
@@ -72,8 +99,9 @@ python eval_baselines.py \
 4. 处理本地任务；
 5. 上传被卸载的任务；
 6. 处理 MEC 队列；
-7. 丢弃超过 deadline 的任务；
-8. 计算奖励并返回下一步观测。
+7. 如果启用下行传输，返回任务输出数据；
+8. 丢弃超过 deadline 的任务；
+9. 计算奖励并返回下一步观测。
 
 ## 观测
 
@@ -82,7 +110,8 @@ python eval_baselines.py \
 - `step`：当前时间步；
 - `users`：每个用户的状态列表；
 - `server_queue_length`：MEC 服务器队列长度；
-- `servers`：每个 edge server 的位置、计算能力、队列长度和覆盖范围；
+- `server_downlink_queue_length`：MEC 下行响应队列长度；
+- `servers`：每个 edge server 的位置、计算能力、计算队列长度、下行队列长度和覆盖范围；
 - `max_offloads_per_step`：每步最多可卸载用户数。
 
 每个用户包含：
@@ -93,9 +122,13 @@ python eval_baselines.py \
 - `queue_length`；
 - `current_task_size`；
 - `current_task_remaining_cycles`；
+- `current_task_type`；
+- `current_task_output_size`；
+- `current_task_priority`；
+- `current_task_deadline_remaining`；
 - `uplink_rate`。
 - `best_edge_server_id`；
-- `server_rates`：该用户到各 edge server 的近似上行速率和可达性。
+- `server_rates`：该用户到各 edge server 的近似上行速率、下行速率和可达性。
 
 ## 动作
 
@@ -108,6 +141,53 @@ action = [1, 4, 7]
 环境只接受前 `max_offloads_per_step` 个合法且不重复的用户编号。
 
 在多 edge server 场景下，当前仍保持旧动作接口兼容：动作只选择用户，环境会根据 `edge_selection_policy` 自动选择目标 edge server。默认策略是 `nearest`，也可以使用 `least_loaded`。
+
+也可以显式指定目标 edge server：
+
+```python
+action = [(1, 0), (4, 2), (7, 1)]
+```
+
+这表示分别把用户 `1`、`4`、`7` 的队首任务卸载到指定 edge server。
+
+## 网络模型开关
+
+默认配置保持旧行为，避免破坏已有 DreamerV3/PPO/SAC 冒烟入口。需要更接近论文实验时，可以打开：
+
+- `enable_uplink_contention`：同一 edge server 下同时上传的任务共享上行带宽；
+- `enable_downlink_transmission`：MEC 执行完成后，还需要通过下行链路返回 `output_size`；
+- `enable_cloud_fallback`：允许显式把任务卸载到 cloud；
+- `base_downlink_rate`：下行基础速率。
+
+对应命令行参数：
+
+```bash
+python eval_baselines.py \
+  --num-edge-servers 3 \
+  --enable-uplink-contention \
+  --enable-downlink-transmission \
+  --enable-cloud-fallback
+```
+
+## 实验指标
+
+`info` 和 `eval_baselines.py` 聚合结果中包含：
+
+- `deadline_violation_rate`：截止期违约率；
+- `avg_delay`：平均完成延迟；
+- `avg_total_queue`：平均系统队列长度；
+- `avg_edge_utilization`：平均 edge 计算利用率；
+- `avg_uplink_data`：平均每步上行传输数据量；
+- `avg_downlink_data`：平均每步下行传输数据量；
+- `avg_network_data`：平均每步上下行总传输数据量。
+- `avg_cloud_utilization`：平均 cloud 计算利用率；
+- `avg_cloud_usage_ratio`：平均每步完成任务中的 cloud 完成占比；
+- `avg_energy_used`：轻量能耗估计；
+- `avg_cloud_cost`：cloud 计算成本估计。
+
+这些指标用于区分策略是“单纯完成更多任务”，还是确实更好地利用 edge 资源和网络资源。
+
+`eval_baselines.py` 写出的 CSV/JSONL 还会记录 `scenario`、`reward_preset`、`num_edge_servers`、`task_type_count`、`enable_uplink_contention`、`enable_downlink_transmission` 和 `enable_cloud_fallback` 等配置元数据，避免后续实验文件只剩指标、缺少场景来源。
 
 ## 奖励
 
@@ -140,11 +220,11 @@ experiment_records/
 
 当前环境仍是轻量级版本，尚未达到论文级 MEC 仿真完整度。主要缺口包括：
 
-1. cloud-edge-device 层级；
-2. 任务类型、输出数据大小和 deadline 分布；
-3. 上下行网络、带宽竞争和边云传输延迟；
-4. 更完整的异构资源利用率、能耗和成本指标；
+1. cloud-edge-device 层级和 cloud fallback；
+2. 边云传输延迟；
+3. 能耗和成本指标；
+4. 更真实的 RSU/base station 关联；
 5. 移动切换和服务迁移；
-6. 显式选择目标 edge server 的动作空间。
+6. 结构化观测编码器。
 
-当前已经加入多 edge server 的基础拓扑，下一步应扩展动作空间和启发式基线，让策略能显式选择目标 edge server。
+当前已经加入多 edge server、显式目标服务器动作、异构任务模型、可选上行竞争、可选下行响应传输、cloud fallback、edge/cloud utilization、network usage、energy/cost 指标、命名场景模板、场景回归矩阵和 trace profile 转换。下一步应进入正式多 seed baseline 与 DRL 训练协议。

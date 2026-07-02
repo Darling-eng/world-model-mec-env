@@ -30,10 +30,23 @@ class MECConfig:
     edge_server_compute_rates: tuple[float, ...] | None = None
     edge_server_coverage_radius: float | None = None
     edge_selection_policy: str = "nearest"
+    enable_cloud_fallback: bool = False
+    cloud_compute_rate: float = 40.0
+    cloud_wan_upload_rate: float = 4.0
+    cloud_wan_downlink_rate: float = 6.0
+    cloud_wan_delay_steps: int = 2
+    local_energy_per_cycle: float = 0.02
+    edge_energy_per_cycle: float = 0.01
+    cloud_energy_per_cycle: float = 0.008
+    network_energy_per_data: float = 0.005
+    cloud_cost_per_cycle: float = 0.002
 
     base_uplink_rate: float = 12.0
+    base_downlink_rate: float = 16.0
     pathloss_bias: float = 8.0
     channel_noise: float = 0.15
+    enable_uplink_contention: bool = False
+    enable_downlink_transmission: bool = False
 
     reward_preset: str = "debug"
     delay_penalty: float = 1.0
